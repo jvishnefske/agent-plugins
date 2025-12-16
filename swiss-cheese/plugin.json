@@ -1,0 +1,121 @@
+{
+  "name": "safe-rust",
+  "version": "1.0.0",
+  "description": "Safety-critical Rust development with 9-layer Swiss Cheese verification model. Features upfront design review, automated gate validation, and iterative refinement loops.",
+  "author": {
+    "name": "Safety Systems",
+    "email": "safety@example.com"
+  },
+  "commands": [
+    {
+      "name": "safe-rust",
+      "description": "Start safety-critical Rust development with design review",
+      "path": "./commands/safe-rust.md"
+    },
+    {
+      "name": "safe-rust:gate",
+      "description": "Run a specific gate validation (exit 0=pass, exit 1=fail)",
+      "path": "./commands/gate.md"
+    },
+    {
+      "name": "safe-rust:skip-layer",
+      "description": "Request to skip a layer with justification (requires proof of inapplicability)",
+      "path": "./commands/skip-layer.md"
+    },
+    {
+      "name": "safe-rust:status",
+      "description": "Show current verification status across all layers",
+      "path": "./commands/status.md"
+    },
+    {
+      "name": "safe-rust:loop",
+      "description": "Start iterative refinement loop until all gates pass",
+      "path": "./commands/loop.md"
+    },
+    {
+      "name": "safe-rust:cancel",
+      "description": "Cancel the current verification loop",
+      "path": "./commands/cancel.md"
+    }
+  ],
+  "agents": [
+    {
+      "name": "orchestrator-architect",
+      "description": "Top-level orchestrator that conducts design review and coordinates all verification layers",
+      "path": "./agents/orchestrator-architect.md"
+    },
+    {
+      "name": "requirements-agent",
+      "description": "Layer 1: Formalize requirements with Rust-specific constraints",
+      "path": "./agents/01-requirements.md"
+    },
+    {
+      "name": "architecture-agent",
+      "description": "Layer 2: Design type-safe, ownership-correct architecture",
+      "path": "./agents/02-architecture.md"
+    },
+    {
+      "name": "tdd-agent",
+      "description": "Layer 3: Write comprehensive tests BEFORE implementation",
+      "path": "./agents/03-tdd.md"
+    },
+    {
+      "name": "implementation-agent",
+      "description": "Layer 4: Implement safe Rust code to pass tests",
+      "path": "./agents/04-implementation.md"
+    },
+    {
+      "name": "static-analysis-agent",
+      "description": "Layer 5: Run Clippy, cargo-audit, cargo-deny, unsafe audit",
+      "path": "./agents/05-static-analysis.md"
+    },
+    {
+      "name": "formal-verification-agent",
+      "description": "Layer 6: Prove properties with Kani, Prusti, Creusot",
+      "path": "./agents/06-formal-verification.md"
+    },
+    {
+      "name": "dynamic-analysis-agent",
+      "description": "Layer 7: Run Miri, fuzzing, coverage, timing analysis",
+      "path": "./agents/07-dynamic-analysis.md"
+    },
+    {
+      "name": "review-agent",
+      "description": "Layer 8: Independent fresh-eyes review",
+      "path": "./agents/08-review.md"
+    },
+    {
+      "name": "safety-agent",
+      "description": "Layer 9: Assemble safety case and make release decision",
+      "path": "./agents/09-safety.md"
+    }
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "path": "./hooks/post-edit.sh"
+      }
+    ],
+    "Stop": [
+      {
+        "path": "./hooks/stop-hook.sh"
+      }
+    ],
+    "Start": [ {"path": "./hooks/start-hook.sh"}]
+  },
+  "skills": [
+    {
+      "name": "safe-rust-patterns",
+      "path": "./skills/safe-rust-patterns.md"
+    },
+    {
+      "name": "gate-validation",
+      "path": "./skills/gate-validation.md"
+    },
+    {
+      "name": "design-review",
+      "path": "./skills/design-review.md"
+    }
+  ]
+}
