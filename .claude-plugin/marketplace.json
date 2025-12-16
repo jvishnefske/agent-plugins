@@ -1,5 +1,5 @@
 {
-  "name": "claude-plugins",
+  "name": "agent-plugins",
   "owner": {
     "name": "jvishnefske",
     "email": "safety@example.com"
@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "safe-rust",
-      "source": "../swiss-cheese",
+      "source": "./swiss-cheese",
       "version": "1.0.0",
       "description": "Iterative Rust software development lifecycle tooling with multi-layer defect escape reduction methodology.",
       "author": {
