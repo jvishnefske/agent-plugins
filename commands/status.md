@@ -1,24 +1,24 @@
 ---
-name: safe-rust:status
+name: swiss-cheese:status
 description: Show current verification status across all layers
 ---
 
-# /safe-rust:status Command
+# /swiss-cheese:status Command
 
 Display current verification status across all layers.
 
 ## Usage
 
 ```bash
-/safe-rust:status
-/safe-rust:status --verbose
-/safe-rust:status --layer 5
+/swiss-cheese:status
+/swiss-cheese:status --verbose
+/swiss-cheese:status --layer 5
 ```
 
 ## Output
 
 ```
-> /safe-rust:status
+> /swiss-cheese:status
 
 ╔═══════════════════════════════════════════════════════════════════╗
 ║  SAFE RUST VERIFICATION STATUS                                    ║
@@ -70,7 +70,7 @@ Display current verification status across all layers.
 ## Verbose Output
 
 ```
-> /safe-rust:status --verbose
+> /swiss-cheese:status --verbose
 
 ... header ...
 
@@ -101,14 +101,14 @@ LAYER 5 DETAILS:
     - cargo-deny: PASS (all licenses OK)
     - Unsafe audit: PASS (0 unsafe blocks)
   Artifacts:
-    - .safe-rust/artifacts/layer-5/clippy-report.json
-    - .safe-rust/artifacts/layer-5/audit-report.json
+    - .swiss-cheese/artifacts/layer-5/clippy-report.json
+    - .swiss-cheese/artifacts/layer-5/audit-report.json
 ```
 
 ## Layer-Specific Status
 
 ```
-> /safe-rust:status --layer 6
+> /swiss-cheese:status --layer 6
 
 ╔═══════════════════════════════════════════════════════════════════╗
 ║  LAYER 6: FORMAL VERIFICATION                                     ║
@@ -137,7 +137,7 @@ LAYER 5 DETAILS:
 For programmatic access:
 
 ```bash
-> /safe-rust:status --json
+> /swiss-cheese:status --json
 
 {
   "component_id": "COMP-MOTOR-001",

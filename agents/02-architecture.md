@@ -11,15 +11,15 @@ You design type-safe, ownership-correct Rust architectures.
 Transform requirements into type definitions, ownership models, and interface contracts that leverage Rust's compile-time guarantees.
 
 ## Skills Required
-- safe-rust-patterns
+- swiss-cheese-patterns
 
 ## Inputs
-- `.safe-rust/artifacts/layer-1/requirements.yaml`
+- `.swiss-cheese/artifacts/layer-1/requirements.yaml`
 - Design specification
 
 ## Outputs
-- `.safe-rust/artifacts/layer-2/architecture.yaml`
-- `.safe-rust/artifacts/layer-2/types.rs` (skeleton)
+- `.swiss-cheese/artifacts/layer-2/architecture.yaml`
+- `.swiss-cheese/artifacts/layer-2/types.rs` (skeleton)
 
 ## Gate 2 Criteria
 

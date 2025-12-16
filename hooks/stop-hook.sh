@@ -4,8 +4,8 @@
 
 set -e
 
-LOOP_STATE=".safe-rust/loop-state.json"
-STATE_FILE=".safe-rust/state.json"
+LOOP_STATE=".swiss-cheese/loop-state.json"
+STATE_FILE=".swiss-cheese/state.json"
 
 # Check if loop is active
 check_loop_active() {
@@ -76,7 +76,7 @@ Gates Remaining: $remaining
 
 Continue executing Layer $layer verification.
 After completion, run gate validation:
-  /safe-rust:gate $layer
+  /swiss-cheese:gate $layer
 
 Based on gate result:
 - Exit 0 (PASS): Advance to next layer
@@ -111,7 +111,7 @@ main() {
       
       # Generate final report
       echo ""
-      echo "Final report available at: .safe-rust/completion-report.yaml"
+      echo "Final report available at: .swiss-cheese/completion-report.yaml"
       
       # Allow exit
       exit 0
@@ -125,7 +125,7 @@ main() {
       
       local remaining=$(get_gates_remaining)
       echo "  Gates remaining: $remaining"
-      echo "  Resume with: /safe-rust:loop"
+      echo "  Resume with: /swiss-cheese:loop"
       
       # Mark loop as paused
       jq '.active = false | .paused = true' "$LOOP_STATE" > "$LOOP_STATE.tmp"

@@ -1,19 +1,19 @@
 ---
-name: safe-rust:gate
+name: swiss-cheese:gate
 description: Run a specific gate validation (exit 0=pass, exit 1=fail)
 ---
 
-# /safe-rust:gate Command
+# /swiss-cheese:gate Command
 
 Validate a layer gate and return exit code (0=pass, 1=fail).
 
 ## Usage
 
 ```bash
-/safe-rust:gate <layer_number>
-/safe-rust:gate 1      # Validate Layer 1 → 2 gate
-/safe-rust:gate 5      # Validate Layer 5 → 6 gate
-/safe-rust:gate all    # Validate all gates in sequence
+/swiss-cheese:gate <layer_number>
+/swiss-cheese:gate 1      # Validate Layer 1 → 2 gate
+/swiss-cheese:gate 5      # Validate Layer 5 → 6 gate
+/swiss-cheese:gate all    # Validate all gates in sequence
 ```
 
 ## Exit Codes
@@ -34,7 +34,7 @@ Validate a layer gate and return exit code (0=pass, 1=fail).
 # gate-1.sh - Requirements validation
 
 check_gate_1() {
-  local spec=".safe-rust/artifacts/layer-1/requirements.yaml"
+  local spec=".swiss-cheese/artifacts/layer-1/requirements.yaml"
   
   # Check file exists
   [[ ! -f "$spec" ]] && echo "FAIL: requirements.yaml not found" && exit 1
@@ -77,7 +77,7 @@ check_gate_1
 # gate-2.sh - Architecture validation
 
 check_gate_2() {
-  local arch=".safe-rust/artifacts/layer-2/architecture.yaml"
+  local arch=".swiss-cheese/artifacts/layer-2/architecture.yaml"
   
   [[ ! -f "$arch" ]] && echo "FAIL: architecture.yaml not found" && exit 1
   
@@ -116,7 +116,7 @@ check_gate_2
 # gate-3.sh - TDD Red Phase validation
 
 check_gate_3() {
-  local tests_dir=".safe-rust/artifacts/layer-3/tests"
+  local tests_dir=".swiss-cheese/artifacts/layer-3/tests"
   
   [[ ! -d "$tests_dir" ]] && echo "FAIL: Tests directory not found" && exit 1
   
@@ -133,13 +133,13 @@ check_gate_3() {
   fi
   
   # Check coverage plan exists
-  if [[ ! -f ".safe-rust/artifacts/layer-3/coverage-plan.yaml" ]]; then
+  if [[ ! -f ".swiss-cheese/artifacts/layer-3/coverage-plan.yaml" ]]; then
     echo "FAIL: Coverage plan not defined"
     exit 1
   fi
   
   # Check requirements traceability
-  local req_count=$(yq '.requirements | length' .safe-rust/design-spec.yaml)
+  local req_count=$(yq '.requirements | length' .swiss-cheese/design-spec.yaml)
   local test_count=$(grep -r "#\[test\]" "$tests_dir" | wc -l)
   
   if [[ $test_count -lt $req_count ]]; then
@@ -223,7 +223,7 @@ check_gate_5() {
   local unsafe_count=$(cargo geiger --output-format json 2>/dev/null | \
     jq '.packages.used.code.functions.unsafe // 0')
   local unsafe_justified=$(yq '.unsafe_blocks | length' \
-    .safe-rust/artifacts/layer-5/unsafe-audit.yaml 2>/dev/null || echo 0)
+    .swiss-cheese/artifacts/layer-5/unsafe-audit.yaml 2>/dev/null || echo 0)
   
   if [[ $unsafe_count -gt 0 && $unsafe_count -ne $unsafe_justified ]]; then
     echo "FAIL: Unjustified unsafe blocks"
@@ -244,10 +244,10 @@ check_gate_5
 # gate-6.sh - Formal verification validation
 
 check_gate_6() {
-  local fv_report=".safe-rust/artifacts/layer-6/verification.yaml"
+  local fv_report=".swiss-cheese/artifacts/layer-6/verification.yaml"
   
   # Check if formal verification is required
-  if yq '.verification.formal_tools | length' .safe-rust/design-spec.yaml | grep -q "^0$"; then
+  if yq '.verification.formal_tools | length' .swiss-cheese/design-spec.yaml | grep -q "^0$"; then
     echo "SKIP: No formal verification tools configured"
     exit 3  # Skip exit code
   fi
@@ -295,7 +295,7 @@ check_gate_7() {
   fi
   
   # Check coverage
-  local coverage_target=$(yq '.verification.coverage.line' .safe-rust/design-spec.yaml)
+  local coverage_target=$(yq '.verification.coverage.line' .swiss-cheese/design-spec.yaml)
   local actual_coverage=$(cargo llvm-cov --json 2>/dev/null | jq '.data[0].totals.lines.percent')
   
   if (( $(echo "$actual_coverage < $coverage_target" | bc -l) )); then
@@ -313,10 +313,10 @@ check_gate_7() {
   fi
   
   # Check timing (if required)
-  if yq '.verification.timing_analysis' .safe-rust/design-spec.yaml | grep -q "true"; then
-    if [[ -f ".safe-rust/artifacts/layer-7/timing.yaml" ]]; then
+  if yq '.verification.timing_analysis' .swiss-cheese/design-spec.yaml | grep -q "true"; then
+    if [[ -f ".swiss-cheese/artifacts/layer-7/timing.yaml" ]]; then
       if yq '.measurements[] | select(.status == "FAIL")' \
-          .safe-rust/artifacts/layer-7/timing.yaml | grep -q "."; then
+          .swiss-cheese/artifacts/layer-7/timing.yaml | grep -q "."; then
         echo "FAIL: Timing violations"
         exit 1
       fi
@@ -337,7 +337,7 @@ check_gate_7
 # gate-8.sh - Independent review validation
 
 check_gate_8() {
-  local review=".safe-rust/artifacts/layer-8/review.yaml"
+  local review=".swiss-cheese/artifacts/layer-8/review.yaml"
   
   [[ ! -f "$review" ]] && echo "FAIL: Review not conducted" && exit 1
   
@@ -374,7 +374,7 @@ check_gate_8
 # gate-9.sh - Safety case validation
 
 check_gate_9() {
-  local safety=".safe-rust/artifacts/layer-9/safety-case.yaml"
+  local safety=".swiss-cheese/artifacts/layer-9/safety-case.yaml"
   
   [[ ! -f "$safety" ]] && echo "FAIL: Safety case not assembled" && exit 1
   
@@ -419,7 +419,7 @@ The orchestrator calls gates like this:
 def run_gate(layer: int) -> bool:
     """Run gate validation, return True if passed."""
     result = subprocess.run(
-        ["/safe-rust:gate", str(layer)],
+        ["/swiss-cheese:gate", str(layer)],
         capture_output=True
     )
     
@@ -445,10 +445,10 @@ def run_gate(layer: int) -> bool:
 
 ## Gate Result Recording
 
-Each gate result is recorded in `.safe-rust/gates/`:
+Each gate result is recorded in `.swiss-cheese/gates/`:
 
 ```yaml
-# .safe-rust/gates/gate-5-result.yaml
+# .swiss-cheese/gates/gate-5-result.yaml
 gate: 5
 layer: "Static Analysis"
 timestamp: "2024-01-15T10:30:00Z"

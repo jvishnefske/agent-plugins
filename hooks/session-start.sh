@@ -2,11 +2,11 @@
 # session-start.sh
 # Runs at session start to restore state and provide context
 
-STATE_FILE=".safe-rust/state.json"
-LOOP_STATE=".safe-rust/loop-state.json"
+STATE_FILE=".swiss-cheese/state.json"
+LOOP_STATE=".swiss-cheese/loop-state.json"
 
-# Check if we're in a safe-rust project
-if [[ ! -d ".safe-rust" ]]; then
+# Check if we're in a swiss-cheese project
+if [[ ! -d ".swiss-cheese" ]]; then
   exit 0
 fi
 
@@ -28,9 +28,9 @@ if [[ -f "$LOOP_STATE" ]]; then
 ║  Iteration: $iteration                                            ║
 ║                                                                   ║
 ║  Commands:                                                        ║
-║    /safe-rust:status   - View current state                       ║
-║    /safe-rust:loop     - Resume verification                      ║
-║    /safe-rust:cancel   - Abandon and start fresh                  ║
+║    /swiss-cheese:status   - View current state                       ║
+║    /swiss-cheese:loop     - Resume verification                      ║
+║    /swiss-cheese:cancel   - Abandon and start fresh                  ║
 ╚═══════════════════════════════════════════════════════════════════╝
 EOF
   fi
@@ -47,7 +47,7 @@ if [[ -f "$STATE_FILE" ]]; then
 ╠═══════════════════════════════════════════════════════════════════╣
 ║  Design review was started but not completed.                     ║
 ║                                                                   ║
-║  Run /safe-rust to continue the design review.                    ║
+║  Run /swiss-cheese to continue the design review.                    ║
 ╚═══════════════════════════════════════════════════════════════════╝
 EOF
   fi

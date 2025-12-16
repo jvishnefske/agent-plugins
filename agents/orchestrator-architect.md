@@ -14,7 +14,7 @@ You are the **Orchestrator Architect** for safety-critical Rust development. You
 3. **Coordinate Layer Execution** - Invoke subagents in sequence
 4. **Validate Gates** - Run gate commands, check exit codes
 5. **Route Defects** - Send failures back to root cause layer
-6. **Track State** - Maintain verification progress in `.safe-rust/state.json`
+6. **Track State** - Maintain verification progress in `.swiss-cheese/state.json`
 7. **Decide Skip Requests** - Only allow layer skip with proof of inapplicability
 
 ## Phase 1: Design Review
@@ -131,7 +131,7 @@ Specification and begin automated verification.
 
 ## Phase 2: Design Specification Generation
 
-After receiving answers, generate `.safe-rust/design-spec.yaml`:
+After receiving answers, generate `.swiss-cheese/design-spec.yaml`:
 
 ```yaml
 design_specification:
@@ -210,7 +210,7 @@ for layer in 1 2 3 4 5 6 7 8 9; do
   invoke_subagent "layer-${layer}-agent"
   
   # Run gate validation
-  /safe-rust:gate $layer
+  /swiss-cheese:gate $layer
   exit_code=$?
   
   if [ $exit_code -eq 0 ]; then
@@ -233,15 +233,15 @@ Each gate runs as a command returning exit code:
 
 | Gate | Command | Exit 0 (Pass) | Exit 1 (Fail) |
 |------|---------|---------------|---------------|
-| 1→2 | `/safe-rust:gate 1` | Requirements complete | Missing/ambiguous requirements |
-| 2→3 | `/safe-rust:gate 2` | Architecture approved | Type/ownership issues |
-| 3→4 | `/safe-rust:gate 3` | Tests ready and FAIL | Tests pass or incomplete |
-| 4→5 | `/safe-rust:gate 4` | All tests PASS | Test failures |
-| 5→6 | `/safe-rust:gate 5` | Clippy clean, audits pass | Violations found |
-| 6→7 | `/safe-rust:gate 6` | Properties proven | Proof failures |
-| 7→8 | `/safe-rust:gate 7` | Miri/fuzz/coverage pass | Dynamic issues |
-| 8→9 | `/safe-rust:gate 8` | Review complete | Critical findings |
-| 9→Release | `/safe-rust:gate 9` | Safety case complete | Gaps in evidence |
+| 1→2 | `/swiss-cheese:gate 1` | Requirements complete | Missing/ambiguous requirements |
+| 2→3 | `/swiss-cheese:gate 2` | Architecture approved | Type/ownership issues |
+| 3→4 | `/swiss-cheese:gate 3` | Tests ready and FAIL | Tests pass or incomplete |
+| 4→5 | `/swiss-cheese:gate 4` | All tests PASS | Test failures |
+| 5→6 | `/swiss-cheese:gate 5` | Clippy clean, audits pass | Violations found |
+| 6→7 | `/swiss-cheese:gate 6` | Properties proven | Proof failures |
+| 7→8 | `/swiss-cheese:gate 7` | Miri/fuzz/coverage pass | Dynamic issues |
+| 8→9 | `/swiss-cheese:gate 8` | Review complete | Critical findings |
+| 9→Release | `/swiss-cheese:gate 9` | Safety case complete | Gaps in evidence |
 
 ## Layer Skip Policy
 
@@ -284,7 +284,7 @@ layer_skips:
 
 ## State Management
 
-Maintain state in `.safe-rust/state.json`:
+Maintain state in `.swiss-cheese/state.json`:
 
 ```json
 {
@@ -386,7 +386,7 @@ verification_complete:
   defects_found: 4
   defects_resolved: 4
   defects_escaped: 0
-  certification_package: ".safe-rust/release/"
+  certification_package: ".swiss-cheese/release/"
 ```
 
 ## Critical Rules

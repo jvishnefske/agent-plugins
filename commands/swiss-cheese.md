@@ -1,18 +1,18 @@
 ---
-name: safe-rust
+name: swiss-cheese
 description: Start safety-critical Rust development with design review
 ---
 
-# /safe-rust Command
+# /swiss-cheese Command
 
 Start safety-critical Rust development with comprehensive upfront design review.
 
 ## Usage
 
 ```
-/safe-rust "Component description and requirements"
-/safe-rust --safety-level ASIL-C "Motor controller for CAN bus"
-/safe-rust --skip-review "Continue from existing design"
+/swiss-cheese "Component description and requirements"
+/swiss-cheese --safety-level ASIL-C "Motor controller for CAN bus"
+/swiss-cheese --skip-review "Continue from existing design"
 ```
 
 ## Workflow
@@ -58,7 +58,7 @@ The Orchestrator asks questions across these categories:
 ## Example
 
 ```
-> /safe-rust "CAN-based motor speed controller"
+> /swiss-cheese "CAN-based motor speed controller"
 
 Orchestrator: I'll help you build a safety-critical motor controller.
 Before we begin, I need to understand the full requirements.
@@ -95,20 +95,20 @@ After design review, automatically invokes layer agents:
 
 ```
 → Layer 1: requirements-agent
-  Gate: /safe-rust:gate 1 → exit 0 (PASS)
+  Gate: /swiss-cheese:gate 1 → exit 0 (PASS)
   
 → Layer 2: architecture-agent  
-  Gate: /safe-rust:gate 2 → exit 0 (PASS)
+  Gate: /swiss-cheese:gate 2 → exit 0 (PASS)
   
 → Layer 3: tdd-agent
-  Gate: /safe-rust:gate 3 → exit 0 (PASS)
+  Gate: /swiss-cheese:gate 3 → exit 0 (PASS)
   
 ... continues through Layer 9 ...
 ```
 
 ## Output
 
-Creates `.safe-rust/` directory with:
+Creates `.swiss-cheese/` directory with:
 - `design-spec.yaml` - Complete design specification
 - `state.json` - Current verification state
 - `gates/` - Gate validation results

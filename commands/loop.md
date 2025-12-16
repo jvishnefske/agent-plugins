@@ -1,19 +1,19 @@
 ---
-name: safe-rust:loop
+name: swiss-cheese:loop
 description: Start iterative refinement loop until all gates pass
 ---
 
-# /safe-rust:loop Command
+# /swiss-cheese:loop Command
 
 Start an iterative verification loop that continues until all gates pass (ralph-wiggum pattern).
 
 ## Usage
 
 ```bash
-/safe-rust:loop
-/safe-rust:loop --max-iterations 10
-/safe-rust:loop --from-layer 4
-/safe-rust:loop --completion-promise "ALL_GATES_PASS"
+/swiss-cheese:loop
+/swiss-cheese:loop --max-iterations 10
+/swiss-cheese:loop --from-layer 4
+/swiss-cheese:loop --completion-promise "ALL_GATES_PASS"
 ```
 
 ## How It Works
@@ -22,7 +22,7 @@ This implements the **ralph-wiggum** pattern: a self-referential AI loop where C
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  1. /safe-rust:loop starts                              │
+│  1. /swiss-cheese:loop starts                              │
 │  2. Claude executes current layer                       │
 │  3. Runs gate validation                                │
 │  4. If gate fails: routes to root cause, continues      │
@@ -46,7 +46,7 @@ This implements the **ralph-wiggum** pattern: a self-referential AI loop where C
 
 ## State File
 
-The loop maintains state in `.safe-rust/loop-state.json`:
+The loop maintains state in `.swiss-cheese/loop-state.json`:
 
 ```json
 {
@@ -75,7 +75,7 @@ The Stop hook (`.claude-plugin/hooks/stop-hook.sh`) checks:
 #!/bin/bash
 # stop-hook.sh - Intercept exit attempts during loop
 
-LOOP_STATE=".safe-rust/loop-state.json"
+LOOP_STATE=".swiss-cheese/loop-state.json"
 
 # Check if loop is active
 if [[ -f "$LOOP_STATE" ]]; then
@@ -127,7 +127,7 @@ exit 0
 ## Example Session
 
 ```
-> /safe-rust:loop
+> /swiss-cheese:loop
 
 Starting verification loop...
 Max iterations: 10
@@ -136,13 +136,13 @@ Completion criteria: ALL_GATES_PASS
 [Iteration 1]
 Executing Layer 1: Requirements
   → Invoking requirements-agent...
-  → Running /safe-rust:gate 1
+  → Running /swiss-cheese:gate 1
   → Exit code: 0 (PASS)
   → Advancing to Layer 2
 
 Executing Layer 2: Architecture
   → Invoking architecture-agent...
-  → Running /safe-rust:gate 2
+  → Running /swiss-cheese:gate 2
   → Exit code: 0 (PASS)
   → Advancing to Layer 3
 
@@ -150,7 +150,7 @@ Executing Layer 2: Architecture
 
 Executing Layer 5: Static Analysis
   → Invoking static-analysis-agent...
-  → Running /safe-rust:gate 5
+  → Running /swiss-cheese:gate 5
   → Exit code: 1 (FAIL)
   → Failure: clippy::unwrap_used in src/controller.rs:42
   → Root cause analysis: Implementation defect
@@ -160,12 +160,12 @@ Executing Layer 5: Static Analysis
 Resuming from Layer 4 (rework)
 Executing Layer 4: Implementation
   → Fixing clippy::unwrap_used violation...
-  → Running /safe-rust:gate 4
+  → Running /swiss-cheese:gate 4
   → Exit code: 0 (PASS)
   → Advancing to Layer 5
 
 Executing Layer 5: Static Analysis
-  → Running /safe-rust:gate 5
+  → Running /swiss-cheese:gate 5
   → Exit code: 0 (PASS)
   → Advancing to Layer 6
 
@@ -173,7 +173,7 @@ Executing Layer 5: Static Analysis
 
 [Iteration 3]
 Executing Layer 9: Safety Analysis
-  → Running /safe-rust:gate 9
+  → Running /swiss-cheese:gate 9
   → Exit code: 0 (PASS)
   
 ALL_GATES_PASS
@@ -240,11 +240,11 @@ def route_failure(failed_layer: int, failure_reason: str) -> int:
 To cancel an active loop:
 
 ```
-> /safe-rust:cancel
+> /swiss-cheese:cancel
 
 Loop cancelled.
-State saved to .safe-rust/loop-state.json
-Resume with: /safe-rust:loop --from-layer 5
+State saved to .swiss-cheese/loop-state.json
+Resume with: /swiss-cheese:loop --from-layer 5
 ```
 
 ## Safety Limits
@@ -269,7 +269,7 @@ The loop includes safety limits:
 
 ## Completion Report
 
-On successful completion, generates `.safe-rust/completion-report.yaml`:
+On successful completion, generates `.swiss-cheese/completion-report.yaml`:
 
 ```yaml
 completion_report:
@@ -306,6 +306,6 @@ completion_report:
     
   release:
     decision: "RELEASE"
-    safety_case: ".safe-rust/artifacts/layer-9/safety-case.yaml"
-    certification_package: ".safe-rust/release/"
+    safety_case: ".swiss-cheese/artifacts/layer-9/safety-case.yaml"
+    certification_package: ".swiss-cheese/release/"
 ```

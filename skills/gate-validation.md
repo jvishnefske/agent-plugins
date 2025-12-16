@@ -28,8 +28,8 @@ Each gate is a shell script or command that:
 
 set -e  # Exit on error
 
-ARTIFACTS=".safe-rust/artifacts/layer-N"
-STATE=".safe-rust/state.json"
+ARTIFACTS=".swiss-cheese/artifacts/layer-N"
+STATE=".swiss-cheese/state.json"
 
 # Check prerequisites
 check_prerequisites() {
@@ -209,7 +209,7 @@ def analyze_failure(gate: int, reason: str) -> int:
 
 ## Recording Results
 
-Gate results are recorded in `.safe-rust/gates/`:
+Gate results are recorded in `.swiss-cheese/gates/`:
 
 ```yaml
 # gate-5-result.yaml
@@ -235,7 +235,7 @@ The loop calls gates:
 
 ```bash
 # Run gate
-/safe-rust:gate $layer
+/swiss-cheese:gate $layer
 exit_code=$?
 
 case $exit_code in

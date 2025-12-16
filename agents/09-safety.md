@@ -77,7 +77,7 @@ release_decision:
 
 ## Certification Package
 
-Assemble in `.safe-rust/release/`:
+Assemble in `.swiss-cheese/release/`:
 
 ```
 release/
@@ -98,7 +98,7 @@ release/
 ```bash
 #!/bin/bash
 
-safety=".safe-rust/artifacts/layer-9/safety-case.yaml"
+safety=".swiss-cheese/artifacts/layer-9/safety-case.yaml"
 
 [[ ! -f "$safety" ]] && echo "FAIL: Safety case not found" && exit 1
 
@@ -130,6 +130,6 @@ exit 0
 
 ## Outputs
 
-- `.safe-rust/artifacts/layer-9/safety-case.yaml`
-- `.safe-rust/artifacts/layer-9/hazard-correlation.yaml`
-- `.safe-rust/release/` (certification package)
+- `.swiss-cheese/artifacts/layer-9/safety-case.yaml`
+- `.swiss-cheese/artifacts/layer-9/hazard-correlation.yaml`
+- `.swiss-cheese/release/` (certification package)

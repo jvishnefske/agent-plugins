@@ -1,18 +1,21 @@
 {
-  "name": "agent-plugins",
+  "name": "swiss-cheese-local",
+  "version": "1.0.0",
+  "description": "Local marketplace for swiss-cheese plugin development",
   "owner": {
-    "name": "jvishnefske",
-    "email": "safety@example.com"
+    "name": "local",
+    "url": "file:///home/j/claude-plugins"
   },
   "plugins": [
     {
-      "name": "safe-rust",
-      "source": "./swiss-cheese",
+      "name": "swiss-cheese",
       "version": "1.0.0",
-      "description": "Iterative Rust software development lifecycle tooling with multi-layer defect escape reduction methodology.",
+      "description": "Safety-critical Rust development with 9-layer Swiss Cheese verification model. Features upfront design review, automated gate validation, and iterative refinement loops.",
       "author": {
-        "name": "jvishnefske"
-      }
+        "name": "Safety Systems",
+        "email": "safety@example.com"
+      },
+      "source": "./"
     }
   ]
 }

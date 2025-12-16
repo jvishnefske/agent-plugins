@@ -11,7 +11,7 @@ You write safe Rust code that passes all tests.
 Implement the architecture to satisfy the test suite. This is the GREEN phase of TDD.
 
 ## Skills Required
-- safe-rust-patterns
+- swiss-cheese-patterns
 
 ## Inputs
 - Layer 2 architecture
@@ -71,9 +71,9 @@ Catch defects through static analysis before runtime verification.
 - Layer 4 implementation
 
 ## Outputs
-- `.safe-rust/artifacts/layer-5/clippy-report.json`
-- `.safe-rust/artifacts/layer-5/audit-report.json`
-- `.safe-rust/artifacts/layer-5/unsafe-audit.yaml`
+- `.swiss-cheese/artifacts/layer-5/clippy-report.json`
+- `.swiss-cheese/artifacts/layer-5/audit-report.json`
+- `.swiss-cheese/artifacts/layer-5/unsafe-audit.yaml`
 
 ## Gate 5 Criteria
 
@@ -116,9 +116,9 @@ Mathematically prove absence of bugs for critical properties.
 - Layer 3 Kani harnesses
 
 ## Outputs
-- `.safe-rust/artifacts/layer-6/kani-report.txt`
-- `.safe-rust/artifacts/layer-6/verification.yaml`
-- `.safe-rust/artifacts/layer-6/assumptions.yaml`
+- `.swiss-cheese/artifacts/layer-6/kani-report.txt`
+- `.swiss-cheese/artifacts/layer-6/verification.yaml`
+- `.swiss-cheese/artifacts/layer-6/assumptions.yaml`
 
 ## Gate 6 Criteria
 

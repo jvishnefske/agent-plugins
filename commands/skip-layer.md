@@ -1,16 +1,16 @@
 ---
-name: safe-rust:skip-layer
+name: swiss-cheese:skip-layer
 description: Request to skip a layer with justification (requires proof of inapplicability)
 ---
 
-# /safe-rust:skip-layer Command
+# /swiss-cheese:skip-layer Command
 
 Request to skip a verification layer. **Requires proof of inapplicability.**
 
 ## Usage
 
 ```bash
-/safe-rust:skip-layer <layer_number> --reason "<reason>" --proof "<proof>"
+/swiss-cheese:skip-layer <layer_number> --reason "<reason>" --proof "<proof>"
 ```
 
 ## CRITICAL: Skip Policy
@@ -114,7 +114,7 @@ skip_request:
 ## Example: Valid Skip
 
 ```
-> /safe-rust:skip-layer 6 \
+> /swiss-cheese:skip-layer 6 \
     --reason "Pure lookup table with no computation" \
     --proof "See analysis below"
 
@@ -139,14 +139,14 @@ Risk Assessment:
 
 Decision: APPROVED
 
-Skip recorded in .safe-rust/state.json
+Skip recorded in .swiss-cheese/state.json
 Gate 6 will return exit code 3 (SKIPPED)
 ```
 
 ## Example: Rejected Skip
 
 ```
-> /safe-rust:skip-layer 7 --reason "Takes too long"
+> /swiss-cheese:skip-layer 7 --reason "Takes too long"
 
 SKIP REQUEST: Layer 7 (Dynamic Analysis)
 
@@ -250,7 +250,7 @@ Approved skips are recorded in state:
 All skip requests (approved and rejected) are logged:
 
 ```yaml
-# .safe-rust/audit/skip-requests.yaml
+# .swiss-cheese/audit/skip-requests.yaml
 skip_requests:
   - id: "SKIP-001"
     layer: 6

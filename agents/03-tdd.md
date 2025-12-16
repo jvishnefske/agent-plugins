@@ -20,18 +20,18 @@ If tests pass, either:
 
 ## Skills Required
 - gate-validation
-- safe-rust-patterns
+- swiss-cheese-patterns
 
 ## Inputs
-- `.safe-rust/artifacts/layer-1/requirements.yaml`
-- `.safe-rust/artifacts/layer-2/architecture.yaml`
+- `.swiss-cheese/artifacts/layer-1/requirements.yaml`
+- `.swiss-cheese/artifacts/layer-2/architecture.yaml`
 
 ## Outputs
 - `tests/unit_tests.rs`
 - `tests/integration_tests.rs`
 - `tests/property_tests.rs`
-- `.safe-rust/artifacts/layer-3/kani_harnesses.rs`
-- `.safe-rust/artifacts/layer-3/coverage-plan.yaml`
+- `.swiss-cheese/artifacts/layer-3/kani_harnesses.rs`
+- `.swiss-cheese/artifacts/layer-3/coverage-plan.yaml`
 
 ## Gate 3 Criteria
 

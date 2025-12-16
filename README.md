@@ -1,4 +1,4 @@
-# Safe Rust Plugin
+# Swiss Cheese Plugin
 
 A Claude Code plugin providing iterative Rust software development lifecycle tooling with multi-layer defect escape reduction methodology.
 
@@ -17,14 +17,14 @@ A Claude Code plugin providing iterative Rust software development lifecycle too
 /plugin marketplace add anthropics/claude-code
 
 # Install plugin
-/plugin install safe-rust
+/plugin install swiss-cheese
 ```
 
 ## Quick Start
 
 ```bash
 # Start with design review
-/safe-rust "CAN-based motor controller"
+/swiss-cheese "CAN-based motor controller"
 
 # Answer all design review questions...
 
@@ -37,12 +37,12 @@ A Claude Code plugin providing iterative Rust software development lifecycle too
 
 | Command | Description |
 |---------|-------------|
-| `/safe-rust` | Start new verification with design review |
-| `/safe-rust:gate N` | Run gate N validation (exit 0=pass) |
-| `/safe-rust:loop` | Start iterative loop until completion |
-| `/safe-rust:status` | Show verification status |
-| `/safe-rust:skip-layer N` | Request layer skip (requires proof) |
-| `/safe-rust:cancel` | Cancel active loop |
+| `/swiss-cheese` | Start new verification with design review |
+| `/swiss-cheese:gate N` | Run gate N validation (exit 0=pass) |
+| `/swiss-cheese:loop` | Start iterative loop until completion |
+| `/swiss-cheese:status` | Show verification status |
+| `/swiss-cheese:skip-layer N` | Request layer skip (requires proof) |
+| `/swiss-cheese:cancel` | Cancel active loop |
 
 ## 9-Layer Swiss Cheese Model
 
@@ -99,7 +99,7 @@ The Orchestrator asks ALL questions upfront:
 Using ralph-wiggum pattern:
 
 ```
-/safe-rust:loop
+/swiss-cheese:loop
   → Execute Layer N
   → Run Gate N
   → If PASS: advance
@@ -119,7 +119,7 @@ Invalid: "We don't have time"
 ## Project Structure
 
 ```
-.safe-rust/
+.swiss-cheese/
 ├── design-spec.yaml      # Complete design specification
 ├── state.json            # Verification state
 ├── loop-state.json       # Loop iteration state
@@ -147,7 +147,7 @@ Invalid: "We don't have time"
 
 - `design-review`: Upfront question methodology
 - `gate-validation`: Exit code gate implementation
-- `safe-rust-patterns`: Type-state, newtypes, no-panic
+- `swiss-cheese-patterns`: Type-state, newtypes, no-panic
 
 ## Agents
 

@@ -5,8 +5,8 @@
 
 set -e
 
-STATE_FILE=".safe-rust/state.json"
-CHANGE_LOG=".safe-rust/changes.log"
+STATE_FILE=".swiss-cheese/state.json"
+CHANGE_LOG=".swiss-cheese/changes.log"
 
 # Get the edited file from hook context
 EDITED_FILE="${HOOK_FILE:-unknown}"
@@ -106,15 +106,15 @@ notify_invalidation() {
     echo "  Layers invalidated: $layers"
     echo ""
     echo "  These layers will need re-verification."
-    echo "  Run /safe-rust:status to see current state."
+    echo "  Run /swiss-cheese:status to see current state."
     echo "╚═══════════════════════════════════════════════════════════════╝"
   fi
 }
 
 # Main
 main() {
-  # Only run if we're in a safe-rust project
-  if [[ ! -d ".safe-rust" ]]; then
+  # Only run if we're in a swiss-cheese project
+  if [[ ! -d ".swiss-cheese" ]]; then
     exit 0
   fi
   

@@ -85,7 +85,7 @@ mod verification {
 ## Assumption Documentation
 
 ```yaml
-# .safe-rust/artifacts/layer-6/assumptions.yaml
+# .swiss-cheese/artifacts/layer-6/assumptions.yaml
 assumptions:
   - id: "VA-001"
     assumption: "Hardware tick interval is 1ms ±1%"

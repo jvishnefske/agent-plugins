@@ -1,18 +1,18 @@
 ---
-name: safe-rust:cancel
+name: swiss-cheese:cancel
 description: Cancel the current verification loop
 ---
 
-# /safe-rust:cancel Command
+# /swiss-cheese:cancel Command
 
 Cancel the current verification loop.
 
 ## Usage
 
 ```bash
-/safe-rust:cancel
-/safe-rust:cancel --save-state
-/safe-rust:cancel --force
+/swiss-cheese:cancel
+/swiss-cheese:cancel --save-state
+/swiss-cheese:cancel --force
 ```
 
 ## Behavior
@@ -26,7 +26,7 @@ Cancelling the loop:
 ## Output
 
 ```
-> /safe-rust:cancel
+> /swiss-cheese:cancel
 
 ╔═══════════════════════════════════════════════════════════════════╗
 ║  LOOP CANCELLED                                                   ║
@@ -38,13 +38,13 @@ Cancelling the loop:
 ║  Iterations Used: 3/10                                            ║
 ╠═══════════════════════════════════════════════════════════════════╣
 ║  TO RESUME:                                                       ║
-║  /safe-rust:loop --from-layer 6                                   ║
+║  /swiss-cheese:loop --from-layer 6                                   ║
 ╚═══════════════════════════════════════════════════════════════════╝
 ```
 
 ## State Preservation
 
-On cancel, state is saved to `.safe-rust/state.json`:
+On cancel, state is saved to `.swiss-cheese/state.json`:
 
 ```json
 {
@@ -76,11 +76,11 @@ On cancel, state is saved to `.safe-rust/state.json`:
 If the loop is stuck:
 
 ```bash
-> /safe-rust:cancel --force
+> /swiss-cheese:cancel --force
 
 Force cancelling loop...
 Warning: Current layer work may be lost.
-State saved to .safe-rust/state.json
+State saved to .swiss-cheese/state.json
 
 Loop terminated.
 ```

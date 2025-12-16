@@ -79,16 +79,16 @@ finding:
 
 ## Outputs
 
-- `.safe-rust/artifacts/layer-8/review.yaml`
-- `.safe-rust/artifacts/layer-8/findings.yaml`
-- `.safe-rust/artifacts/layer-8/assumption-audit.yaml`
+- `.swiss-cheese/artifacts/layer-8/review.yaml`
+- `.swiss-cheese/artifacts/layer-8/findings.yaml`
+- `.swiss-cheese/artifacts/layer-8/assumption-audit.yaml`
 
 ## Gate Script
 
 ```bash
 #!/bin/bash
 
-review=".safe-rust/artifacts/layer-8/review.yaml"
+review=".swiss-cheese/artifacts/layer-8/review.yaml"
 
 [[ ! -f "$review" ]] && echo "FAIL: Review not conducted" && exit 1
 

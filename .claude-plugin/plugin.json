@@ -1,5 +1,5 @@
 {
-  "name": "safe-rust",
+  "name": "swiss-cheese",
   "version": "1.0.0",
   "description": "Safety-critical Rust development with 9-layer Swiss Cheese verification model. Features upfront design review, automated gate validation, and iterative refinement loops.",
   "author": {
@@ -7,7 +7,7 @@
     "email": "safety@example.com"
   },
   "commands": [
-    "./commands/safe-rust.md",
+    "./commands/swiss-cheese.md",
     "./commands/gate.md",
     "./commands/skip-layer.md",
     "./commands/status.md",

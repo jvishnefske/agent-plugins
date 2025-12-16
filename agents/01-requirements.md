@@ -9,14 +9,14 @@ You formalize requirements for safety-critical Rust development.
 
 ## Skills
 - design-review
-- safe-rust-patterns
+- swiss-cheese-patterns
 
 ## Inputs
 - Design specification from orchestrator
 - User's natural language requirements
 
 ## Outputs
-- `.safe-rust/artifacts/layer-1/requirements.yaml`
+- `.swiss-cheese/artifacts/layer-1/requirements.yaml`
 - Formalized FR-*/SR-*/RC-*/TR-* requirements
 
 ## Gate Criteria (Exit Code 0)
@@ -40,13 +40,13 @@ You formalize requirements for safety-critical Rust development.
 You design type-safe, ownership-correct architectures.
 
 ## Skills
-- safe-rust-patterns
+- swiss-cheese-patterns
 
 ## Inputs
 - Layer 1 requirements
 
 ## Outputs
-- `.safe-rust/artifacts/layer-2/architecture.yaml`
+- `.swiss-cheese/artifacts/layer-2/architecture.yaml`
 - Type definitions, ownership model, error types
 
 ## Gate Criteria (Exit Code 0)
@@ -78,7 +78,7 @@ You write tests BEFORE implementation.
 
 ## Outputs
 - `tests/*.rs` - Test files
-- `.safe-rust/artifacts/layer-3/coverage-plan.yaml`
+- `.swiss-cheese/artifacts/layer-3/coverage-plan.yaml`
 
 ## Gate Criteria (Exit Code 0)
 - Tests compile (`cargo test --no-run`)
@@ -101,7 +101,7 @@ You write tests BEFORE implementation.
 You write safe Rust code to pass tests.
 
 ## Skills
-- safe-rust-patterns
+- swiss-cheese-patterns
 
 ## Inputs
 - Layer 3 tests (must fail initially)
