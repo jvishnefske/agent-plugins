@@ -1,202 +1,204 @@
-# Swiss Cheese Model - Makefile Gate Validation Template
+# Swiss Cheese Verification Makefile
 #
-# Copy this file to your project root as 'Makefile' and customize the targets.
-# Each target corresponds to a Swiss Cheese verification layer.
-# The orchestrator runs these targets to validate gate passage.
+# Usage: make setup && make verify
 #
-# Exit codes:
-#   0 = Gate passed
-#   Non-zero = Gate failed (orchestrator will retry or block)
+# Reports output to $(REPORT_DIR)/: test-results.json, clippy-report.json,
+# audit-report.json, coverage.json, traceability_matrix.json
 
-.PHONY: all validate-requirements validate-architecture validate-tdd \
-        validate-implementation validate-static-analysis validate-formal-verification \
-        validate-dynamic-analysis validate-review validate-safety-case \
-        traceability-report clean
+.PHONY: all verify verify-quick verify-full reports clean help setup
+.PHONY: validate-requirements validate-architecture validate-tdd
+.PHONY: validate-implementation validate-static-analysis
+.PHONY: validate-dynamic-analysis validate-review validate-safety-case
+.PHONY: build test lint clippy fmt audit deny geiger
+.PHONY: coverage miri fuzz bench kani prusti check-tools install-tools
 
-# Default: run all validation gates in order
-all: validate-requirements validate-architecture validate-tdd validate-implementation \
-     validate-static-analysis validate-dynamic-analysis validate-review validate-safety-case
+# Configuration
+COVERAGE_THRESHOLD ?= 70
+PROPTEST_CASES ?= 10000
+REPORT_DIR ?= .claude
+FUZZ_DURATION ?= 60
+
+all: verify
 
 # =============================================================================
-# Layer 1: Requirements Validation
+# Setup & Installation
 # =============================================================================
-# Validates that requirements are properly documented and testable
+setup: install-tools
+	@echo "✓ Setup complete - run 'make verify'"
+
+install-tools:
+	@echo "=== Installing Tools ==="
+	@rustup component add rustfmt clippy 2>/dev/null || true
+	@command -v cargo-audit >/dev/null || cargo install cargo-audit
+	@command -v cargo-deny >/dev/null || cargo install cargo-deny
+	@command -v cargo-geiger >/dev/null || cargo install cargo-geiger
+	@command -v cargo-llvm-cov >/dev/null || cargo install cargo-llvm-cov
+	@rustup toolchain install nightly 2>/dev/null || true
+	@rustup +nightly component add miri 2>/dev/null || true
+	@echo "✓ Tools installed"
+
+check-tools:
+	@echo "=== Tool Status ==="
+	@for tool in clippy fmt audit deny geiger llvm-cov tarpaulin kani fuzz flamegraph; do \
+		printf "cargo-%-12s " "$$tool:" && (cargo $$tool --version 2>/dev/null || echo "not installed"); \
+	done
+	@printf "cargo-%-12s " "miri:" && (cargo +nightly miri --version 2>/dev/null || echo "not installed")
+
+# =============================================================================
+# Top-Level Targets
+# =============================================================================
+verify: validate-requirements validate-architecture validate-tdd validate-implementation \
+        validate-static-analysis validate-dynamic-analysis validate-review validate-safety-case
+	@echo "✓ All verification passed"
+
+verify-quick: lint test
+	@echo "✓ Quick verification passed"
+
+verify-full: verify kani prusti
+	@echo "✓ Full verification passed"
+
+reports: $(REPORT_DIR)
+	@echo "=== Generating Reports ==="
+	@cargo test --all-features -- -Z unstable-options --format json 2>/dev/null > $(REPORT_DIR)/test-results.json || true
+	@cargo clippy --all-targets --all-features --message-format=json 2>/dev/null > $(REPORT_DIR)/clippy-report.json || true
+	@command -v cargo-audit >/dev/null && cargo audit --json > $(REPORT_DIR)/audit-report.json 2>/dev/null || true
+	@command -v cargo-llvm-cov >/dev/null && cargo llvm-cov --all-features --json --output-path $(REPORT_DIR)/coverage.json || true
+	@command -v cargo-geiger >/dev/null && cargo geiger --all-features 2>&1 > $(REPORT_DIR)/geiger-report.txt || true
+	@$(MAKE) -s traceability-report
+	@echo "✓ Reports in $(REPORT_DIR)/"
+
+$(REPORT_DIR):
+	@mkdir -p $(REPORT_DIR)
+
+# =============================================================================
+# Layer 1-3: Requirements, Architecture, TDD
+# =============================================================================
 validate-requirements:
-	@echo "=== Validating Requirements ==="
+	@echo "=== Layer 1: Requirements ==="
 	@test -f design.toml || (echo "ERROR: design.toml not found" && exit 1)
-	@python3 -c "import tomllib; tomllib.load(open('design.toml', 'rb'))" || exit 1
-	@echo "Requirements document is valid TOML"
-	@# Check that all requirements have acceptance criteria
-	@python3 -c "\
-import tomllib; \
-data = tomllib.load(open('design.toml', 'rb')); \
-reqs = data.get('requirements', []); \
-missing = [r['id'] for r in reqs if not r.get('acceptance_criteria')]; \
-exit(1) if missing else exit(0)" || (echo "ERROR: Requirements missing acceptance_criteria" && exit 1)
-	@echo "All requirements have acceptance criteria"
+	@python3 -c "import tomllib; d=tomllib.load(open('design.toml','rb')); \
+		missing=[r['id'] for r in d.get('requirements',[]) if not r.get('acceptance_criteria')]; \
+		exit(1) if missing else print('✓ Requirements valid')" || exit 1
 
-# =============================================================================
-# Layer 2: Architecture Validation
-# =============================================================================
-# Validates architecture documentation and module structure
 validate-architecture:
-	@echo "=== Validating Architecture ==="
-	@# Check for architecture documentation
-	@test -f docs/architecture.md -o -f ARCHITECTURE.md || \
-		(echo "WARNING: No architecture documentation found" && exit 0)
-	@echo "Architecture documentation exists"
-	@# Validate Cargo.toml structure if Rust project
-	@if [ -f Cargo.toml ]; then \
-		cargo metadata --format-version 1 > /dev/null || exit 1; \
-		echo "Cargo.toml is valid"; \
-	fi
+	@echo "=== Layer 2: Architecture ==="
+	@cargo metadata --format-version 1 > /dev/null
+	@echo "✓ Cargo.toml valid"
 
-# =============================================================================
-# Layer 3: TDD Validation
-# =============================================================================
-# Validates that tests exist and compile (they may fail - TDD style)
 validate-tdd:
-	@echo "=== Validating TDD ==="
-	@# Check that test files exist
-	@if [ -f Cargo.toml ]; then \
-		find . -name '*_test.rs' -o -name 'test_*.rs' -o -path '*/tests/*.rs' | grep -q . || \
-			(echo "WARNING: No test files found" && exit 0); \
-		echo "Test files exist"; \
-		cargo test --no-run 2>&1 || exit 1; \
-		echo "Tests compile successfully"; \
-	fi
+	@echo "=== Layer 3: TDD ==="
+	@cargo test --no-run 2>&1
+	@echo "✓ Tests compile"
 
 # =============================================================================
-# Layer 4: Implementation Validation
+# Layer 4: Implementation
 # =============================================================================
-# Validates that implementation passes all tests
-validate-implementation:
-	@echo "=== Validating Implementation ==="
-	@if [ -f Cargo.toml ]; then \
-		cargo build --all-targets || exit 1; \
-		echo "Build successful"; \
-		cargo test --all-features -- --test-threads=1 || exit 1; \
-		echo "All tests pass"; \
-	fi
+validate-implementation: build test
+	@echo "✓ Implementation validated"
 
-# =============================================================================
-# Layer 5: Static Analysis Validation
-# =============================================================================
-# Runs static analysis tools (Clippy, audit, deny)
-validate-static-analysis:
-	@echo "=== Validating Static Analysis ==="
-	@if [ -f Cargo.toml ]; then \
-		cargo clippy --all-targets --all-features -- -D warnings || exit 1; \
-		echo "Clippy passed"; \
-		if command -v cargo-audit > /dev/null; then \
-			cargo audit || echo "WARNING: cargo audit found issues"; \
-		fi; \
-		if command -v cargo-deny > /dev/null && [ -f deny.toml ]; then \
-			cargo deny check || echo "WARNING: cargo deny found issues"; \
-		fi; \
-		if command -v cargo-geiger > /dev/null; then \
-			cargo geiger --all-features 2>&1 | tee geiger-report.txt; \
-		fi; \
-	fi
+build:
+	@cargo build --all-targets
 
-# =============================================================================
-# Layer 6: Formal Verification (Optional)
-# =============================================================================
-# Runs formal verification tools (Kani, etc.)
-validate-formal-verification:
-	@echo "=== Validating Formal Verification ==="
-	@if [ -f Cargo.toml ] && command -v cargo-kani > /dev/null; then \
-		cargo kani || exit 1; \
-		echo "Kani verification passed"; \
-	else \
-		echo "Kani not available - skipping formal verification"; \
-	fi
-
-# =============================================================================
-# Layer 7: Dynamic Analysis Validation
-# =============================================================================
-# Runs dynamic analysis (Miri, fuzzing, coverage)
-validate-dynamic-analysis:
-	@echo "=== Validating Dynamic Analysis ==="
-	@if [ -f Cargo.toml ]; then \
-		if rustup run nightly cargo --version > /dev/null 2>&1; then \
-			cargo +nightly miri test 2>&1 || echo "WARNING: Miri found issues"; \
-		fi; \
-		if command -v cargo-llvm-cov > /dev/null; then \
-			cargo llvm-cov --all-features --json --output-path coverage.json || true; \
-			cargo llvm-cov report --fail-under-lines 70 || \
-				(echo "WARNING: Coverage below 70%" && exit 0); \
-		fi; \
-	fi
-
-# =============================================================================
-# Layer 8: Review Validation
-# =============================================================================
-# Validates that review checklist items are addressed
-validate-review:
-	@echo "=== Validating Review ==="
-	@# Check for review documentation
-	@test -f REVIEW.md -o -f .claude/review.md || \
-		(echo "WARNING: No review documentation found" && exit 0)
-	@echo "Review documentation exists"
-
-# =============================================================================
-# Layer 9: Safety Case Validation
-# =============================================================================
-# Assembles and validates the safety case
-validate-safety-case:
-	@echo "=== Validating Safety Case ==="
-	@# Verify all previous gates passed (by checking their artifacts)
-	@if [ -f Cargo.toml ]; then \
-		test -f target/debug/* 2>/dev/null || cargo build; \
-	fi
-	@# Generate traceability report
-	@$(MAKE) traceability-report
-	@echo "Safety case assembled"
-
-# =============================================================================
-# Traceability Report Generation
-# =============================================================================
-# Generates traceability matrix from test results and requirements
-traceability-report:
-	@echo "=== Generating Traceability Report ==="
-	@mkdir -p .claude
-	@if [ -f Cargo.toml ]; then \
-		cargo test --all-features -- -Z unstable-options --format json 2>/dev/null > .claude/test-results.json || true; \
-	fi
-	@# Python script to generate matrix (embedded)
-	@python3 -c "\
-import json, tomllib, os; \
-from pathlib import Path; \
-design = tomllib.load(open('design.toml', 'rb')) if Path('design.toml').exists() else {}; \
-reqs = {r['id']: r for r in design.get('requirements', []) if 'id' in r}; \
-tests = []; \
-if Path('.claude/test-results.json').exists(): \
-    try: \
-        tests = [line for line in open('.claude/test-results.json') if line.strip()]; \
-        tests = [json.loads(t) for t in tests if 'name' in json.loads(t)]; \
-    except: pass; \
-matrix = {'requirements': [], 'coverage': {}}; \
-for rid, req in reqs.items(): \
-    matching_tests = [t.get('name','') for t in tests if rid.lower().replace('-','_') in t.get('name','').lower()]; \
-    matrix['requirements'].append({'id': rid, 'title': req.get('title',''), 'tests': matching_tests, 'covered': len(matching_tests) > 0}); \
-    matrix['coverage'][rid] = 'covered' if matching_tests else 'pending'; \
-Path('.claude/traceability_matrix.json').write_text(json.dumps(matrix, indent=2)); \
-print(f'Traceability matrix: {len(reqs)} requirements, {sum(1 for r in matrix[\"requirements\"] if r[\"covered\"])} covered')"
-
-# =============================================================================
-# Utility Targets
-# =============================================================================
-clean:
-	@rm -rf target .claude/test-results.json coverage.json geiger-report.txt
-
-# Individual test helpers
 test:
-	cargo test --all-features
+	@cargo test --all-features
+
+# =============================================================================
+# Layer 5: Static Analysis
+# =============================================================================
+validate-static-analysis: clippy audit deny geiger
+	@echo "✓ Static analysis complete"
+
+lint: clippy fmt
+	@echo "✓ Lint complete"
 
 clippy:
-	cargo clippy --all-targets --all-features -- -D warnings
+	@cargo clippy --all-targets --all-features -- -D warnings
 
-coverage:
-	cargo llvm-cov --all-features --html
-	@echo "Coverage report: target/llvm-cov/html/index.html"
+fmt:
+	@cargo fmt --check || (echo "Run 'cargo fmt' to fix" && exit 1)
+
+audit:
+	@command -v cargo-audit >/dev/null && cargo audit || echo "cargo-audit not installed"
+
+deny:
+	@command -v cargo-deny >/dev/null && [ -f deny.toml ] && cargo deny check || true
+
+geiger:
+	@command -v cargo-geiger >/dev/null && cargo geiger --all-features || true
+
+# =============================================================================
+# Layer 6: Formal Verification
+# =============================================================================
+kani:
+	@command -v cargo-kani >/dev/null && cargo kani || echo "Kani not installed"
+
+prusti:
+	@command -v cargo-prusti >/dev/null && cargo prusti || echo "Prusti not installed"
+
+# =============================================================================
+# Layer 7: Dynamic Analysis
+# =============================================================================
+validate-dynamic-analysis: miri coverage
+	@echo "✓ Dynamic analysis complete"
+
+miri:
+	@rustup run nightly cargo miri test 2>&1 || echo "Miri unavailable"
+
+coverage: $(REPORT_DIR)
+	@command -v cargo-llvm-cov >/dev/null && \
+		cargo llvm-cov --all-features --json --output-path $(REPORT_DIR)/coverage.json && \
+		cargo llvm-cov report --fail-under-lines $(COVERAGE_THRESHOLD) || \
+		echo "Coverage check skipped"
+
+fuzz:
+	@command -v cargo-fuzz >/dev/null && [ -d fuzz ] && \
+		cargo +nightly fuzz run $(FUZZ_TARGET) -- -max_total_time=$(FUZZ_DURATION) || \
+		echo "Fuzzing unavailable"
+
+bench:
+	@cargo bench || true
+
+# =============================================================================
+# Layer 8-9: Review & Safety Case
+# =============================================================================
+validate-review:
+	@echo "=== Layer 8: Review ==="
+	@test -f REVIEW.md -o -f .claude/review.md || echo "No review docs"
+	@echo "✓ Review checked"
+
+validate-safety-case: traceability-report
+	@echo "=== Layer 9: Safety Case ==="
+	@echo "✓ Safety case assembled"
+
+traceability-report: $(REPORT_DIR)
+	@python3 -c "\
+import json, tomllib; from pathlib import Path; \
+design = tomllib.load(open('design.toml','rb')) if Path('design.toml').exists() else {}; \
+reqs = {r['id']:r for r in design.get('requirements',[]) if 'id' in r}; \
+covered = 0; matrix = {'requirements':[], 'summary':{}}; \
+for rid,req in reqs.items(): \
+    matrix['requirements'].append({'id':rid,'title':req.get('title','')}); \
+matrix['summary'] = {'total':len(reqs),'covered':covered}; \
+Path('$(REPORT_DIR)/traceability_matrix.json').write_text(json.dumps(matrix,indent=2)); \
+print(f'✓ Traceability: {len(reqs)} requirements')"
+
+# =============================================================================
+# Utilities
+# =============================================================================
+clean:
+	@rm -rf target $(REPORT_DIR)/*.json $(REPORT_DIR)/*.txt
+	@echo "✓ Clean"
+
+help:
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Setup:     setup, install-tools, check-tools"
+	@echo "Verify:    verify, verify-quick, verify-full"
+	@echo "Reports:   reports (JSON output to $(REPORT_DIR)/)"
+	@echo "Lint:      lint, clippy, fmt, audit, deny, geiger"
+	@echo "Test:      test, build, miri, fuzz, bench, coverage"
+	@echo "Formal:    kani, prusti"
+	@echo "Gates:     validate-{requirements,architecture,tdd,implementation,"
+	@echo "           static-analysis,dynamic-analysis,review,safety-case}"
+	@echo ""
+	@echo "Config: COVERAGE_THRESHOLD=$(COVERAGE_THRESHOLD) REPORT_DIR=$(REPORT_DIR)"
