@@ -1,27 +1,37 @@
 {
-  "description": "Swiss Cheese orchestration - Stop and SubagentStop hooks for Makefile-based gating",
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/orchestrate.py",
-            "timeout": 120
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/orchestrate.py",
-            "timeout": 120
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": [
+    {
+      "matcher": {
+        "event": "SessionStart"
+      },
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py"
+        }
+      ]
+    },
+    {
+      "matcher": {
+        "event": "Stop"
+      },
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/verify_gate.py"
+        }
+      ]
+    },
+    {
+      "matcher": {
+        "event": "SubagentStop"
+      },
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/subagent_stop.py"
+        }
+      ]
+    }
+  ]
 }
