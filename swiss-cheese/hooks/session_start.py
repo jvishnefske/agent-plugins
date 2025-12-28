@@ -18,6 +18,40 @@ except ImportError:
 
 
 @dataclass
+class SessionState:
+    """Persistent session state loaded from .swiss-cheese/state.json."""
+    version: int = 1
+    loop_active: bool = False
+    loop_paused: bool = False
+    current_layer: int = 0
+    layer_results: dict[int, str] = field(default_factory=dict)  # layer -> "pass"|"fail"|"skip"
+    last_updated: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SessionState":
+        """Create SessionState from dict, handling missing/extra fields gracefully."""
+        return cls(
+            version=data.get("version", 1),
+            loop_active=data.get("loop_active", False),
+            loop_paused=data.get("loop_paused", False),
+            current_layer=data.get("current_layer", 0),
+            layer_results={int(k): v for k, v in data.get("layer_results", {}).items()},
+            last_updated=data.get("last_updated", ""),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dict for JSON serialization."""
+        return {
+            "version": self.version,
+            "loop_active": self.loop_active,
+            "loop_paused": self.loop_paused,
+            "current_layer": self.current_layer,
+            "layer_results": {str(k): v for k, v in self.layer_results.items()},
+            "last_updated": self.last_updated,
+        }
+
+
+@dataclass
 class Project:
     """Project metadata."""
     name: str
@@ -87,6 +121,115 @@ def allow(reason: str = "") -> None:
     """Output allow decision and exit."""
     print(json.dumps({"decision": "allow", "reason": reason}))
     sys.exit(0)
+
+
+def get_state_path(project_dir: Path) -> Path:
+    """Get path to state.json file."""
+    return project_dir / ".swiss-cheese" / "state.json"
+
+
+def load_state(project_dir: Path) -> Optional[SessionState]:
+    """Load existing state from .swiss-cheese/state.json if it exists.
+
+    FR-001.1: SessionStart hook loads existing state from `.swiss-cheese/state.json`
+    """
+    state_path = get_state_path(project_dir)
+    if not state_path.exists():
+        return None
+
+    try:
+        with open(state_path, "r") as f:
+            data = json.load(f)
+        return SessionState.from_dict(data)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_state(project_dir: Path, state: SessionState) -> bool:
+    """Save state to .swiss-cheese/state.json using immutable write pattern.
+
+    FR-001.3: State transitions are immutable (new JSON written, not mutated in place)
+
+    Uses atomic write: write to temp file, then rename. This ensures
+    the state file is never in a partial/corrupt state.
+    """
+    from datetime import datetime, timezone
+    import tempfile
+
+    state_dir = project_dir / ".swiss-cheese"
+    state_path = get_state_path(project_dir)
+
+    # Update timestamp
+    state.last_updated = datetime.now(timezone.utc).isoformat()
+
+    try:
+        # Ensure directory exists
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write to temp file first (atomic write pattern)
+        fd, temp_path = tempfile.mkstemp(
+            suffix=".json",
+            prefix="state_",
+            dir=state_dir,
+        )
+        try:
+            with open(fd, "w") as f:
+                json.dump(state.to_dict(), f, indent=2)
+
+            # Atomic rename
+            Path(temp_path).rename(state_path)
+            return True
+        except Exception:
+            # Clean up temp file on error
+            Path(temp_path).unlink(missing_ok=True)
+            raise
+    except OSError:
+        return False
+
+
+def format_loop_status(state: SessionState) -> str:
+    """Format loop status for display.
+
+    FR-001.2: SessionStart hook displays paused loop status if present
+    """
+    if not state.loop_active and not state.loop_paused:
+        return ""
+
+    layer_names = {
+        1: "Requirements",
+        2: "Architecture",
+        3: "TDD Tests",
+        4: "Implementation",
+        5: "Static Analysis",
+        6: "Formal Verification",
+        7: "Dynamic Analysis",
+        8: "Review",
+        9: "Release Analysis",
+    }
+
+    lines = ["## Session State\n"]
+
+    if state.loop_paused:
+        lines.append("**⏸️ LOOP PAUSED** - Resume with `/swiss-cheese:loop`\n")
+    elif state.loop_active:
+        lines.append("**🔄 LOOP ACTIVE**\n")
+
+    current_name = layer_names.get(state.current_layer, f"Layer {state.current_layer}")
+    lines.append(f"**Current Layer:** {state.current_layer} - {current_name}\n")
+
+    if state.layer_results:
+        lines.append("**Layer Results:**")
+        for layer_num in sorted(state.layer_results.keys()):
+            result = state.layer_results[layer_num]
+            layer_name = layer_names.get(layer_num, f"Layer {layer_num}")
+            icon = {"pass": "✓", "fail": "✗", "skip": "⊘"}.get(result, "?")
+            lines.append(f"  - Layer {layer_num} ({layer_name}): {icon} {result}")
+        lines.append("")
+
+    if state.last_updated:
+        lines.append(f"*Last updated: {state.last_updated}*\n")
+
+    return "\n".join(lines)
 
 
 def parse_spec(toml_path: Path) -> TaskSpec:
@@ -226,6 +369,9 @@ def main() -> None:
     project_dir = Path(input_data.get("project_dir", ".")).resolve()
     spec_file = project_dir / ".claude" / "tasks.toml"
 
+    # FR-001.1: Load existing state from .swiss-cheese/state.json
+    session_state = load_state(project_dir)
+
     # No spec file - request design phase
     if not spec_file.exists():
         block(
@@ -304,7 +450,15 @@ def main() -> None:
         task_contexts.append(("READY", format_task_context(task, worktree_path, spec_content)))
 
     # Format output
-    output_parts = ["## Implementation Tasks\n"]
+    output_parts = []
+
+    # FR-001.2: Display paused loop status if present
+    if session_state:
+        loop_status = format_loop_status(session_state)
+        if loop_status:
+            output_parts.append(loop_status)
+
+    output_parts.append("## Implementation Tasks\n")
 
     for status, context in task_contexts:
         output_parts.append(f"**[{status}]**\n{context}\n")
