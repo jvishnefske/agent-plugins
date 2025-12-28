@@ -13,10 +13,14 @@ from session_start import (
     Project,
     Task,
     TaskSpec,
+    SessionState,
     parse_spec,
     topological_sort,
     get_ready_tasks,
     get_worktree_path,
+    load_state,
+    save_state,
+    format_loop_status,
 )
 from subagent_stop import (
     is_worktree,
@@ -489,3 +493,215 @@ class TestVerifyGate:
             # No Makefile
             success, output = run_verify(Path(tmpdir))
             assert success is False
+
+
+class TestSessionState:
+    """Test SessionState dataclass and serialization."""
+
+    def test_default_state(self):
+        """SessionState with defaults."""
+        state = SessionState()
+        assert state.version == 1
+        assert state.loop_active is False
+        assert state.loop_paused is False
+        assert state.current_layer == 0
+        assert state.layer_results == {}
+        assert state.last_updated == ""
+
+    def test_state_with_values(self):
+        """SessionState with custom values."""
+        state = SessionState(
+            version=1,
+            loop_active=True,
+            loop_paused=False,
+            current_layer=3,
+            layer_results={1: "pass", 2: "pass"},
+            last_updated="2024-01-01T00:00:00Z",
+        )
+        assert state.loop_active is True
+        assert state.current_layer == 3
+        assert state.layer_results[1] == "pass"
+
+    def test_to_dict(self):
+        """SessionState converts to dict correctly."""
+        state = SessionState(
+            loop_active=True,
+            current_layer=2,
+            layer_results={1: "pass"},
+        )
+        data = state.to_dict()
+        assert data["loop_active"] is True
+        assert data["current_layer"] == 2
+        assert data["layer_results"]["1"] == "pass"  # Keys become strings
+
+    def test_from_dict(self):
+        """SessionState creates from dict correctly."""
+        data = {
+            "version": 1,
+            "loop_active": True,
+            "loop_paused": True,
+            "current_layer": 5,
+            "layer_results": {"1": "pass", "2": "fail"},
+            "last_updated": "2024-01-01T00:00:00Z",
+        }
+        state = SessionState.from_dict(data)
+        assert state.loop_active is True
+        assert state.loop_paused is True
+        assert state.current_layer == 5
+        assert state.layer_results[1] == "pass"
+        assert state.layer_results[2] == "fail"
+
+    def test_from_dict_missing_fields(self):
+        """SessionState from_dict handles missing fields."""
+        data = {"version": 1}
+        state = SessionState.from_dict(data)
+        assert state.loop_active is False
+        assert state.current_layer == 0
+        assert state.layer_results == {}
+
+    def test_roundtrip(self):
+        """SessionState serialization roundtrip preserves data."""
+        original = SessionState(
+            loop_active=True,
+            loop_paused=False,
+            current_layer=4,
+            layer_results={1: "pass", 2: "pass", 3: "fail"},
+            last_updated="2024-06-15T12:00:00Z",
+        )
+        data = original.to_dict()
+        restored = SessionState.from_dict(data)
+        assert restored.loop_active == original.loop_active
+        assert restored.current_layer == original.current_layer
+        assert restored.layer_results == original.layer_results
+
+
+class TestLoadSaveState:
+    """Test load_state and save_state functions."""
+
+    def test_load_state_missing_file(self):
+        """load_state returns None when no state file exists."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = load_state(Path(tmpdir))
+            assert state is None
+
+    def test_load_state_invalid_json(self):
+        """load_state returns None for invalid JSON."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir) / ".swiss-cheese"
+            state_dir.mkdir()
+            state_file = state_dir / "state.json"
+            state_file.write_text("not valid json {{{")
+            state = load_state(Path(tmpdir))
+            assert state is None
+
+    def test_load_state_valid(self):
+        """load_state loads valid state file."""
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir) / ".swiss-cheese"
+            state_dir.mkdir()
+            state_file = state_dir / "state.json"
+            state_file.write_text(json.dumps({
+                "version": 1,
+                "loop_active": True,
+                "loop_paused": False,
+                "current_layer": 3,
+                "layer_results": {"1": "pass", "2": "pass"},
+                "last_updated": "2024-01-01T00:00:00Z",
+            }))
+
+            state = load_state(Path(tmpdir))
+            assert state is not None
+            assert state.loop_active is True
+            assert state.current_layer == 3
+
+    def test_save_state_creates_directory(self):
+        """save_state creates .swiss-cheese directory if needed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_dir = Path(tmpdir)
+            state = SessionState(loop_active=True, current_layer=1)
+
+            result = save_state(project_dir, state)
+            assert result is True
+            assert (project_dir / ".swiss-cheese" / "state.json").exists()
+
+    def test_save_state_updates_timestamp(self):
+        """save_state updates last_updated timestamp."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_dir = Path(tmpdir)
+            state = SessionState(loop_active=True)
+            assert state.last_updated == ""
+
+            save_state(project_dir, state)
+            assert state.last_updated != ""
+            assert "T" in state.last_updated  # ISO format
+
+    def test_save_load_roundtrip(self):
+        """save_state then load_state preserves data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_dir = Path(tmpdir)
+            original = SessionState(
+                loop_active=True,
+                loop_paused=True,
+                current_layer=7,
+                layer_results={1: "pass", 2: "pass", 3: "skip"},
+            )
+
+            save_state(project_dir, original)
+            loaded = load_state(project_dir)
+
+            assert loaded is not None
+            assert loaded.loop_active == original.loop_active
+            assert loaded.loop_paused == original.loop_paused
+            assert loaded.current_layer == original.current_layer
+            assert loaded.layer_results == original.layer_results
+
+
+class TestFormatLoopStatus:
+    """Test format_loop_status function."""
+
+    def test_no_loop_returns_empty(self):
+        """No active/paused loop returns empty string."""
+        state = SessionState(loop_active=False, loop_paused=False)
+        result = format_loop_status(state)
+        assert result == ""
+
+    def test_loop_active(self):
+        """Active loop shows status."""
+        state = SessionState(loop_active=True, current_layer=3)
+        result = format_loop_status(state)
+        assert "LOOP ACTIVE" in result
+        assert "Layer 3" in result or "TDD Tests" in result
+
+    def test_loop_paused(self):
+        """Paused loop shows resume instructions."""
+        state = SessionState(
+            loop_active=False,
+            loop_paused=True,
+            current_layer=5,
+        )
+        result = format_loop_status(state)
+        assert "LOOP PAUSED" in result
+        assert "/swiss-cheese:loop" in result
+
+    def test_layer_results_displayed(self):
+        """Layer results are displayed with icons."""
+        state = SessionState(
+            loop_active=True,
+            current_layer=4,
+            layer_results={1: "pass", 2: "pass", 3: "fail"},
+        )
+        result = format_loop_status(state)
+        assert "pass" in result
+        assert "fail" in result
+
+    def test_layer_names_displayed(self):
+        """Layer names are displayed for known layers."""
+        state = SessionState(
+            loop_active=True,
+            current_layer=6,
+            layer_results={5: "pass"},
+        )
+        result = format_loop_status(state)
+        assert "Static Analysis" in result or "Formal Verification" in result

@@ -43,9 +43,9 @@ Release Package
 ## MVP Functional Requirements
 
 ### FR-001: Session State Management
-- [ ] **FR-001.1**: SessionStart hook loads existing state from `.swiss-cheese/state.json`
-- [ ] **FR-001.2**: SessionStart hook displays paused loop status if present
-- [ ] **FR-001.3**: State transitions are immutable (new JSON written, not mutated in place)
+- [x] **FR-001.1**: SessionStart hook loads existing state from `.swiss-cheese/state.json`
+- [x] **FR-001.2**: SessionStart hook displays paused loop status if present
+- [x] **FR-001.3**: State transitions are immutable (new JSON written, not mutated in place)
 
 ### FR-002: Task Specification Parsing
 - [x] **FR-002.1**: Parse TOML task specifications with version validation
@@ -99,3 +99,6 @@ Release Package
 | FR-004.1 | test_hooks.py | TestVerifyGate.test_run_verify_success |
 | FR-004.2 | test_hooks.py | TestVerifyGate.test_run_verify_failure |
 | FR-004.3 | test_hooks.py | TestVerifyGate.test_run_verify_no_make |
+| FR-001.1 | test_hooks.py | TestLoadSaveState.test_load_state_* |
+| FR-001.2 | test_hooks.py | TestFormatLoopStatus.* |
+| FR-001.3 | test_hooks.py | TestLoadSaveState.test_save_state_* |
