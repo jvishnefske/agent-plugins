@@ -18,6 +18,17 @@
       },
       "source": "./swiss-cheese",
       "category": "development"
+    },
+    {
+      "name": "ultrathink-orchestrator",
+      "description": "Parallel orchestration workflow with up to 100 subagent invocations. Ensures Claude Code always uses subagents for planning and implementation tasks.",
+      "version": "1.0.0",
+      "author": {
+        "name": "jvishnefske",
+        "email": "jvishnefske@gmail.com"
+      },
+      "source": "./ultrathink-orchestrator",
+      "category": "development"
     }
   ]
 }
