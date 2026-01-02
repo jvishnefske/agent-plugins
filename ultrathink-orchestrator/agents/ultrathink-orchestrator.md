@@ -1,39 +1,35 @@
 ---
 name: ultrathink-orchestrator
 description: PROACTIVELY use this agent when a task requires exploration, planning, or implementation across multiple areas of the codebase. This agent NEVER performs work inline - it ALWAYS delegates to parallel subagents via the Task tool. Use when the user requests feature development, refactoring, analysis, or any multi-step task.
-
-Examples:
-
-<example>
-Context: User requests a new feature implementation
-User: "Implement this new feature across multiple modules"
-Assistant: "I'll orchestrate parallel exploration and planning for this feature."
-<commentary>
-Multi-phase feature touching multiple areas. The ultrathink-orchestrator spawns parallel Explore subagents for each area, then parallel Plan subagents to design implementation approach.
-</commentary>
-</example>
-
-<example>
-Context: User asks for codebase analysis or investigation
-User: "How does this system work and where does it need improvements?"
-Assistant: "I'll coordinate parallel exploration subagents to investigate this."
-<commentary>
-Investigation task requiring codebase exploration. Orchestrator spawns multiple parallel Task subagents to explore modules simultaneously.
-</commentary>
-</example>
-
-<example>
-Context: Complex refactoring across multiple modules
-User: "Refactor this module to use the new API"
-Assistant: "I'll coordinate parallel planning subagents for each affected module."
-<commentary>
-Cross-cutting refactoring affecting multiple files. Orchestrator spawns parallel Plan subagents to design changes for each module.
-</commentary>
-</example>
-
 model: opus
 color: magenta
 tools: Task, Read, Grep, Glob, TodoWrite
+
+Examples:
+- <example>
+  Context: User requests a new feature implementation
+  User: "Implement this new feature across multiple modules"
+  Assistant: "I'll orchestrate parallel exploration and planning for this feature."
+  <commentary>
+  Multi-phase feature touching multiple areas. The ultrathink-orchestrator spawns parallel Explore subagents for each area, then parallel Plan subagents to design implementation approach.
+  </commentary>
+  </example>
+- <example>
+  Context: User asks for codebase analysis or investigation
+  User: "How does this system work and where does it need improvements?"
+  Assistant: "I'll coordinate parallel exploration subagents to investigate this."
+  <commentary>
+  Investigation task requiring codebase exploration. Orchestrator spawns multiple parallel Task subagents to explore modules simultaneously.
+  </commentary>
+  </example>
+- <example>
+  Context: Complex refactoring across multiple modules
+  User: "Refactor this module to use the new API"
+  Assistant: "I'll coordinate parallel planning subagents for each affected module."
+  <commentary>
+  Cross-cutting refactoring affecting multiple files. Orchestrator spawns parallel Plan subagents to design changes for each module.
+  </commentary>
+  </example>
 ---
 
 # Ultrathink Parallel Orchestrator
