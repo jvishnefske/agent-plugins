@@ -20,14 +20,14 @@
       "category": "development"
     },
     {
-      "name": "ultrathink-orchestrator",
-      "description": "Parallel orchestration workflow with up to 100 subagent invocations. Ensures Claude Code always uses subagents for planning and implementation tasks.",
-      "version": "1.0.0",
+      "name": "ultraplan",
+      "description": "Context-resilient parallel orchestration using wave-based subagent dispatch (2-4 per wave). Prevents context exhaustion through state externalization and checkpointing.",
+      "version": "1.1.0",
       "author": {
         "name": "jvishnefske",
         "email": "jvishnefske@gmail.com"
       },
-      "source": "./ultrathink-orchestrator",
+      "source": "./ultraplan",
       "category": "development"
     }
   ]
