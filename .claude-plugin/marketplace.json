@@ -21,8 +21,8 @@
     },
     {
       "name": "ultraplan",
-      "description": "Context-resilient parallel orchestration using wave-based subagent dispatch (2-4 per wave). Prevents context exhaustion through state externalization and checkpointing.",
-      "version": "1.1.0",
+      "description": "Maximum parallelism orchestration - spawns ALL independent tasks in a single message. Tool-native JSON outputs for certification.",
+      "version": "2.0.0",
       "author": {
         "name": "jvishnefske",
         "email": "jvishnefske@gmail.com"
