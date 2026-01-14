@@ -1,24 +1,13 @@
 {
-  "description": "Swiss Cheese orchestration - Stop and SubagentStop hooks for Makefile-based gating",
+  "description": "Swiss Cheese gate validation on UserPromptSubmit",
   "hooks": {
-    "Stop": [
+    "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/orchestrate.py",
-            "timeout": 120
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/orchestrate.py",
-            "timeout": 120
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/gate_check.py",
+            "timeout": 5000
           }
         ]
       }
