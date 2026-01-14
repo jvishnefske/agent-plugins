@@ -1,6 +1,8 @@
-"""Unit tests for swiss-cheese hooks."""
+"""Unit tests for swiss-cheese gate_check hook."""
+import json
 import sys
 import tempfile
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,699 +11,371 @@ import pytest
 # Add hooks directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
 
-from session_start import (
-    Project,
-    Task,
-    TaskSpec,
-    SessionState,
-    parse_spec,
-    topological_sort,
-    get_ready_tasks,
-    get_worktree_path,
-    load_state,
-    save_state,
-    format_loop_status,
-)
-from subagent_stop import (
-    is_worktree,
-    get_worktree_branch,
-    get_main_branch,
-    is_branch_in_linear_history,
+from gate_check import (
+    GateStatus,
+    GateResult,
+    LAYERS,
+    get_project_dir,
+    makefile_exists,
+    has_target,
+    run_gate,
+    detect_current_layer,
+    check_current_gate,
+    format_status_message,
+    main,
 )
 
 
-class TestProject:
-    """Test Project dataclass."""
+class TestGateStatus:
+    """Test GateStatus enum."""
 
-    def test_project_with_defaults(self):
-        """Project with minimal fields uses defaults."""
-        p = Project(name="test")
-        assert p.name == "test"
-        assert p.description == ""
-        assert p.worktree_base == ".worktrees"
-
-    def test_project_with_all_fields(self):
-        """Project with all fields set."""
-        p = Project(name="test", description="A test", worktree_base="wt")
-        assert p.name == "test"
-        assert p.description == "A test"
-        assert p.worktree_base == "wt"
+    def test_status_values(self):
+        """GateStatus has expected values."""
+        assert GateStatus.PASS.value == "PASS"
+        assert GateStatus.FAIL.value == "FAIL"
+        assert GateStatus.NOT_RUN.value == "NOT_RUN"
 
 
-class TestTask:
-    """Test Task dataclass validation."""
+class TestGateResult:
+    """Test GateResult dataclass."""
 
-    def test_valid_task(self):
-        """Valid task passes validation."""
-        t = Task(id="task-001", title="Do thing", acceptance="Tests pass")
-        assert t.id == "task-001"
-        assert t.status == "pending"
-        assert t.deps == []
+    def test_gate_result_immutable(self):
+        """GateResult is frozen (immutable)."""
+        result = GateResult(layer=1, name="requirements", status=GateStatus.PASS)
+        with pytest.raises(AttributeError):
+            result.status = GateStatus.FAIL
 
-    def test_task_with_all_fields(self):
-        """Task with all fields set."""
-        t = Task(
-            id="task-001",
-            title="Do thing",
-            acceptance="Tests pass",
-            status="in_progress",
-            deps=["task-000"],
-            spec_file="specs/task.md",
-            worktree=".wt/task-001",
+    def test_gate_result_with_message(self):
+        """GateResult stores optional message."""
+        result = GateResult(
+            layer=1,
+            name="requirements",
+            status=GateStatus.FAIL,
+            message="design.md not found",
         )
-        assert t.status == "in_progress"
-        assert t.deps == ["task-000"]
-        assert t.spec_file == "specs/task.md"
+        assert result.message == "design.md not found"
 
-    def test_task_missing_id_fails(self):
-        """Task without id raises ValueError."""
-        with pytest.raises(ValueError, match="must have an id"):
-            Task(id="", title="Do thing", acceptance="Tests pass")
-
-    def test_task_missing_title_fails(self):
-        """Task without title raises ValueError."""
-        with pytest.raises(ValueError, match="must have a title"):
-            Task(id="task-001", title="", acceptance="Tests pass")
-
-    def test_task_missing_acceptance_fails(self):
-        """Task without acceptance raises ValueError."""
-        with pytest.raises(ValueError, match="must have acceptance"):
-            Task(id="task-001", title="Do thing", acceptance="")
-
-    def test_task_invalid_status_fails(self):
-        """Task with invalid status raises ValueError."""
-        with pytest.raises(ValueError, match="invalid status"):
-            Task(id="task-001", title="Do thing", acceptance="Tests pass", status="done")
+    def test_gate_result_default_message(self):
+        """GateResult message defaults to None."""
+        result = GateResult(layer=1, name="requirements", status=GateStatus.PASS)
+        assert result.message is None
 
 
-class TestTaskSpec:
-    """Test TaskSpec dataclass validation."""
+class TestLayers:
+    """Test LAYERS constant."""
 
-    def test_valid_spec(self):
-        """Valid spec passes validation."""
-        project = Project(name="test")
-        tasks = [Task(id="task-001", title="Do thing", acceptance="Tests pass")]
-        spec = TaskSpec(version=1, status="ready_for_implementation", project=project, tasks=tasks)
-        assert spec.version == 1
+    def test_four_layers_defined(self):
+        """LAYERS has 4 verification layers."""
+        assert len(LAYERS) == 4
 
-    def test_invalid_version_fails(self):
-        """Invalid version raises ValueError."""
-        project = Project(name="test")
-        tasks = [Task(id="task-001", title="Do thing", acceptance="Tests pass")]
-        with pytest.raises(ValueError, match="Unsupported spec version"):
-            TaskSpec(version=2, status="ready_for_implementation", project=project, tasks=tasks)
+    def test_layer_structure(self):
+        """Each layer has (name, make_target) tuple."""
+        for layer_num, (name, target) in LAYERS.items():
+            assert isinstance(layer_num, int)
+            assert 1 <= layer_num <= 4
+            assert isinstance(name, str)
+            assert isinstance(target, str)
+            assert target.startswith("validate-")
 
-    def test_invalid_status_fails(self):
-        """Invalid status raises ValueError."""
-        project = Project(name="test")
-        tasks = [Task(id="task-001", title="Do thing", acceptance="Tests pass")]
-        with pytest.raises(ValueError, match="Invalid spec status"):
-            TaskSpec(version=1, status="invalid", project=project, tasks=tasks)
-
-    def test_invalid_dep_reference_fails(self):
-        """Task depending on nonexistent task raises ValueError."""
-        project = Project(name="test")
-        tasks = [
-            Task(id="task-001", title="Do thing", acceptance="Tests pass", deps=["task-999"])
-        ]
-        with pytest.raises(ValueError, match="depends on unknown task"):
-            TaskSpec(version=1, status="ready_for_implementation", project=project, tasks=tasks)
-
-    def test_valid_dep_reference(self):
-        """Task depending on existing task passes."""
-        project = Project(name="test")
-        tasks = [
-            Task(id="task-001", title="First", acceptance="Tests pass"),
-            Task(id="task-002", title="Second", acceptance="Tests pass", deps=["task-001"]),
-        ]
-        spec = TaskSpec(version=1, status="ready_for_implementation", project=project, tasks=tasks)
-        assert len(spec.tasks) == 2
+    def test_expected_layers(self):
+        """LAYERS contains expected layer names."""
+        layer_names = [name for name, _ in LAYERS.values()]
+        assert "requirements" in layer_names
+        assert "tdd" in layer_names
+        assert "implementation" in layer_names
+        assert "verify" in layer_names
 
 
-class TestParseSpec:
-    """Test TOML parsing."""
+class TestGetProjectDir:
+    """Test get_project_dir function."""
 
-    def test_parse_valid_toml(self):
-        """Parse valid TOML file."""
-        toml_content = """
-version = 1
-status = "ready_for_implementation"
+    def test_uses_env_var(self):
+        """Uses CLAUDE_PROJECT_DIR if set."""
+        with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": "/custom/dir"}):
+            result = get_project_dir()
+            assert result == Path("/custom/dir")
 
-[project]
-name = "test-project"
-description = "A test"
-worktree_base = ".wt"
-
-[[tasks]]
-id = "task-001"
-title = "First task"
-acceptance = "Tests pass"
-deps = []
-status = "pending"
-
-[[tasks]]
-id = "task-002"
-title = "Second task"
-acceptance = "No warnings"
-deps = ["task-001"]
-status = "pending"
-"""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
-            f.write(toml_content)
-            f.flush()
-            spec = parse_spec(Path(f.name))
-
-        assert spec.project.name == "test-project"
-        assert spec.project.worktree_base == ".wt"
-        assert len(spec.tasks) == 2
-        assert spec.tasks[0].id == "task-001"
-        assert spec.tasks[1].deps == ["task-001"]
-
-    def test_parse_minimal_toml(self):
-        """Parse minimal valid TOML."""
-        toml_content = """
-version = 1
-status = "draft"
-
-[project]
-name = "minimal"
-
-[[tasks]]
-id = "task-001"
-title = "Only task"
-acceptance = "Done"
-"""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
-            f.write(toml_content)
-            f.flush()
-            spec = parse_spec(Path(f.name))
-
-        assert spec.project.name == "minimal"
-        assert spec.project.worktree_base == ".worktrees"  # default
-        assert len(spec.tasks) == 1
+    def test_defaults_to_cwd(self):
+        """Defaults to current working directory."""
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("gate_check.Path.cwd", return_value=Path("/some/cwd")):
+                result = get_project_dir()
+                assert result == Path("/some/cwd")
 
 
-class TestTopologicalSort:
-    """Test topological sorting of tasks."""
+class TestMakefileExists:
+    """Test makefile_exists function."""
 
-    def test_no_deps(self):
-        """Tasks with no deps maintain order."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok"),
-            Task(id="b", title="B", acceptance="ok"),
-            Task(id="c", title="C", acceptance="ok"),
-        ]
-        sorted_tasks = topological_sort(tasks)
-        assert [t.id for t in sorted_tasks] == ["a", "b", "c"]
-
-    def test_linear_deps(self):
-        """Linear dependency chain sorts correctly."""
-        tasks = [
-            Task(id="c", title="C", acceptance="ok", deps=["b"]),
-            Task(id="a", title="A", acceptance="ok"),
-            Task(id="b", title="B", acceptance="ok", deps=["a"]),
-        ]
-        sorted_tasks = topological_sort(tasks)
-        ids = [t.id for t in sorted_tasks]
-        assert ids.index("a") < ids.index("b")
-        assert ids.index("b") < ids.index("c")
-
-    def test_diamond_deps(self):
-        """Diamond dependency pattern sorts correctly."""
-        tasks = [
-            Task(id="d", title="D", acceptance="ok", deps=["b", "c"]),
-            Task(id="b", title="B", acceptance="ok", deps=["a"]),
-            Task(id="c", title="C", acceptance="ok", deps=["a"]),
-            Task(id="a", title="A", acceptance="ok"),
-        ]
-        sorted_tasks = topological_sort(tasks)
-        ids = [t.id for t in sorted_tasks]
-        assert ids.index("a") < ids.index("b")
-        assert ids.index("a") < ids.index("c")
-        assert ids.index("b") < ids.index("d")
-        assert ids.index("c") < ids.index("d")
-
-    def test_cycle_detected(self):
-        """Cycle in dependencies raises ValueError."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", deps=["b"]),
-            Task(id="b", title="B", acceptance="ok", deps=["a"]),
-        ]
-        with pytest.raises(ValueError, match="cycle detected"):
-            topological_sort(tasks)
-
-    def test_self_cycle_detected(self):
-        """Self-referencing dependency raises ValueError."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", deps=["a"]),
-        ]
-        with pytest.raises(ValueError, match="cycle detected"):
-            topological_sort(tasks)
-
-    def test_complex_cycle_detected(self):
-        """Complex cycle (a->b->c->a) raises ValueError."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", deps=["c"]),
-            Task(id="b", title="B", acceptance="ok", deps=["a"]),
-            Task(id="c", title="C", acceptance="ok", deps=["b"]),
-        ]
-        with pytest.raises(ValueError, match="cycle detected"):
-            topological_sort(tasks)
-
-
-class TestGetReadyTasks:
-    """Test ready task selection."""
-
-    def test_no_deps_all_ready(self):
-        """Tasks with no deps are all ready."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok"),
-            Task(id="b", title="B", acceptance="ok"),
-        ]
-        ready = get_ready_tasks(tasks)
-        assert len(ready) == 2
-
-    def test_pending_with_complete_deps(self):
-        """Pending task with complete deps is ready."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", status="complete"),
-            Task(id="b", title="B", acceptance="ok", deps=["a"]),
-        ]
-        ready = get_ready_tasks(tasks)
-        assert len(ready) == 1
-        assert ready[0].id == "b"
-
-    def test_pending_with_incomplete_deps(self):
-        """Pending task with incomplete deps is not ready."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", status="pending"),
-            Task(id="b", title="B", acceptance="ok", deps=["a"]),
-        ]
-        ready = get_ready_tasks(tasks)
-        assert len(ready) == 1
-        assert ready[0].id == "a"
-
-    def test_in_progress_not_ready(self):
-        """In-progress tasks are not in ready list."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", status="in_progress"),
-            Task(id="b", title="B", acceptance="ok"),
-        ]
-        ready = get_ready_tasks(tasks)
-        assert len(ready) == 1
-        assert ready[0].id == "b"
-
-    def test_complete_not_ready(self):
-        """Complete tasks are not in ready list."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", status="complete"),
-            Task(id="b", title="B", acceptance="ok", status="complete"),
-        ]
-        ready = get_ready_tasks(tasks)
-        assert len(ready) == 0
-
-    def test_multiple_deps_all_complete(self):
-        """Task with multiple deps ready when all complete."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", status="complete"),
-            Task(id="b", title="B", acceptance="ok", status="complete"),
-            Task(id="c", title="C", acceptance="ok", deps=["a", "b"]),
-        ]
-        ready = get_ready_tasks(tasks)
-        assert len(ready) == 1
-        assert ready[0].id == "c"
-
-    def test_multiple_deps_some_incomplete(self):
-        """Task with multiple deps not ready when some incomplete."""
-        tasks = [
-            Task(id="a", title="A", acceptance="ok", status="complete"),
-            Task(id="b", title="B", acceptance="ok", status="pending"),
-            Task(id="c", title="C", acceptance="ok", deps=["a", "b"]),
-        ]
-        ready = get_ready_tasks(tasks)
-        assert len(ready) == 1
-        assert ready[0].id == "b"
-
-
-class TestGetWorktreePath:
-    """Test worktree path generation."""
-
-    def test_default_worktree_path(self):
-        """Default path uses worktree_base/task_id."""
-        project = Project(name="test", worktree_base=".worktrees")
-        spec = TaskSpec(
-            version=1,
-            status="ready_for_implementation",
-            project=project,
-            tasks=[Task(id="task-001", title="T", acceptance="ok")],
-        )
-        task = spec.tasks[0]
-        path = get_worktree_path(Path("/project"), spec, task)
-        assert path == Path("/project/.worktrees/task-001")
-
-    def test_custom_worktree_path(self):
-        """Custom worktree path overrides default."""
-        project = Project(name="test")
-        task = Task(id="task-001", title="T", acceptance="ok", worktree="custom/path")
-        spec = TaskSpec(
-            version=1,
-            status="ready_for_implementation",
-            project=project,
-            tasks=[task],
-        )
-        path = get_worktree_path(Path("/project"), spec, task)
-        assert path == Path("/project/custom/path")
-
-
-class TestSubagentStopHelpers:
-    """Test subagent_stop.py helper functions."""
-
-    def test_is_worktree_file(self):
-        """Worktree has .git as file."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir)
-            git_file = path / ".git"
-            git_file.write_text("gitdir: /main/repo/.git/worktrees/branch")
-            assert is_worktree(path) is True
-
-    def test_is_worktree_directory(self):
-        """Main repo has .git as directory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir)
-            git_dir = path / ".git"
-            git_dir.mkdir()
-            assert is_worktree(path) is False
-
-    def test_is_worktree_missing(self):
-        """No .git means not a worktree."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir)
-            assert is_worktree(path) is False
-
-    @patch("subagent_stop.run_git")
-    def test_get_worktree_branch(self, mock_run):
-        """Get branch name from worktree."""
-        mock_run.return_value = (True, "feature-branch")
-        branch = get_worktree_branch(Path("/some/path"))
-        assert branch == "feature-branch"
-        mock_run.assert_called_once()
-
-    @patch("subagent_stop.run_git")
-    def test_get_worktree_branch_detached(self, mock_run):
-        """Detached HEAD returns None."""
-        mock_run.return_value = (True, "HEAD")
-        branch = get_worktree_branch(Path("/some/path"))
-        assert branch is None
-
-    @patch("subagent_stop.run_git")
-    def test_get_main_branch_main(self, mock_run):
-        """Detect main as default branch."""
-        mock_run.return_value = (True, "abc123")
-        branch = get_main_branch(Path("/repo"))
-        assert branch == "main"
-
-    @patch("subagent_stop.run_git")
-    def test_get_main_branch_master(self, mock_run):
-        """Fall back to master if main doesn't exist."""
-        mock_run.return_value = (False, "")
-        branch = get_main_branch(Path("/repo"))
-        assert branch == "master"
-
-    @patch("subagent_stop.run_git")
-    def test_branch_in_linear_history_merged(self, mock_run):
-        """Branch fully merged shows as in history."""
-        # merge-base equals branch tip
-        mock_run.side_effect = [
-            (True, "abc123"),  # merge-base
-            (True, "abc123"),  # branch tip
-        ]
-        result = is_branch_in_linear_history(Path("/repo"), "feature", "main")
-        assert result is True
-
-    @patch("subagent_stop.run_git")
-    def test_branch_in_linear_history_rebased(self, mock_run):
-        """Branch rebased (cherry-picked) shows as in history."""
-        mock_run.side_effect = [
-            (True, "abc123"),  # merge-base
-            (True, "def456"),  # branch tip (different)
-            (True, ""),  # cherry - no unpicked commits
-        ]
-        result = is_branch_in_linear_history(Path("/repo"), "feature", "main")
-        assert result is True
-
-    @patch("subagent_stop.run_git")
-    def test_branch_not_in_history(self, mock_run):
-        """Branch with unpicked commits not in history."""
-        mock_run.side_effect = [
-            (True, "abc123"),  # merge-base
-            (True, "def456"),  # branch tip
-            (True, "+ abc123 commit message"),  # cherry - has unpicked
-        ]
-        result = is_branch_in_linear_history(Path("/repo"), "feature", "main")
-        assert result is False
-
-
-class TestVerifyGate:
-    """Test verify_gate.py functionality."""
-
-    def test_run_verify_success(self):
-        """Successful make verify returns True."""
-        from verify_gate import run_verify
-
+    def test_makefile_exists(self):
+        """Returns True when Makefile exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: verify\nverify:\n\t@echo 'OK'\n")
-            success, output = run_verify(Path(tmpdir))
-            assert success is True
-            assert "OK" in output
+            makefile.write_text(".PHONY: test\ntest:\n\techo ok\n")
+            assert makefile_exists(Path(tmpdir)) is True
 
-    def test_run_verify_failure(self):
-        """Failed make verify returns False."""
-        from verify_gate import run_verify
+    def test_makefile_missing(self):
+        """Returns False when Makefile missing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert makefile_exists(Path(tmpdir)) is False
 
+
+class TestHasTarget:
+    """Test has_target function."""
+
+    def test_target_exists(self):
+        """Returns True for existing target."""
         with tempfile.TemporaryDirectory() as tmpdir:
             makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: verify\nverify:\n\t@exit 1\n")
-            success, output = run_verify(Path(tmpdir))
-            assert success is False
+            makefile.write_text(".PHONY: test\ntest:\n\t@echo ok\n")
+            exists, err = has_target(Path(tmpdir), "test")
+            assert exists is True
+            assert err == ""
 
-    def test_run_verify_no_make(self):
-        """Missing make returns False."""
-        from verify_gate import run_verify
-
+    def test_target_missing(self):
+        """Returns False for missing target."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # No Makefile
-            success, output = run_verify(Path(tmpdir))
-            assert success is False
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(".PHONY: test\ntest:\n\t@echo ok\n")
+            exists, _ = has_target(Path(tmpdir), "nonexistent")
+            assert exists is False
 
 
-class TestSessionState:
-    """Test SessionState dataclass and serialization."""
+class TestRunGate:
+    """Test run_gate function."""
 
-    def test_default_state(self):
-        """SessionState with defaults."""
-        state = SessionState()
-        assert state.version == 1
-        assert state.loop_active is False
-        assert state.loop_paused is False
-        assert state.current_layer == 0
-        assert state.layer_results == {}
-        assert state.last_updated == ""
-
-    def test_state_with_values(self):
-        """SessionState with custom values."""
-        state = SessionState(
-            version=1,
-            loop_active=True,
-            loop_paused=False,
-            current_layer=3,
-            layer_results={1: "pass", 2: "pass"},
-            last_updated="2024-01-01T00:00:00Z",
-        )
-        assert state.loop_active is True
-        assert state.current_layer == 3
-        assert state.layer_results[1] == "pass"
-
-    def test_to_dict(self):
-        """SessionState converts to dict correctly."""
-        state = SessionState(
-            loop_active=True,
-            current_layer=2,
-            layer_results={1: "pass"},
-        )
-        data = state.to_dict()
-        assert data["loop_active"] is True
-        assert data["current_layer"] == 2
-        assert data["layer_results"]["1"] == "pass"  # Keys become strings
-
-    def test_from_dict(self):
-        """SessionState creates from dict correctly."""
-        data = {
-            "version": 1,
-            "loop_active": True,
-            "loop_paused": True,
-            "current_layer": 5,
-            "layer_results": {"1": "pass", "2": "fail"},
-            "last_updated": "2024-01-01T00:00:00Z",
-        }
-        state = SessionState.from_dict(data)
-        assert state.loop_active is True
-        assert state.loop_paused is True
-        assert state.current_layer == 5
-        assert state.layer_results[1] == "pass"
-        assert state.layer_results[2] == "fail"
-
-    def test_from_dict_missing_fields(self):
-        """SessionState from_dict handles missing fields."""
-        data = {"version": 1}
-        state = SessionState.from_dict(data)
-        assert state.loop_active is False
-        assert state.current_layer == 0
-        assert state.layer_results == {}
-
-    def test_roundtrip(self):
-        """SessionState serialization roundtrip preserves data."""
-        original = SessionState(
-            loop_active=True,
-            loop_paused=False,
-            current_layer=4,
-            layer_results={1: "pass", 2: "pass", 3: "fail"},
-            last_updated="2024-06-15T12:00:00Z",
-        )
-        data = original.to_dict()
-        restored = SessionState.from_dict(data)
-        assert restored.loop_active == original.loop_active
-        assert restored.current_layer == original.current_layer
-        assert restored.layer_results == original.layer_results
-
-
-class TestLoadSaveState:
-    """Test load_state and save_state functions."""
-
-    def test_load_state_missing_file(self):
-        """load_state returns None when no state file exists."""
+    def test_gate_passes(self):
+        """Returns (True, output) when gate passes."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            state = load_state(Path(tmpdir))
-            assert state is None
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(".PHONY: test\ntest:\n\t@echo 'Gate passed'\n")
+            passed, output = run_gate(Path(tmpdir), "test")
+            assert passed is True
+            assert "Gate passed" in output
 
-    def test_load_state_invalid_json(self):
-        """load_state returns None for invalid JSON."""
+    def test_gate_fails(self):
+        """Returns (False, output) when gate fails."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            state_dir = Path(tmpdir) / ".swiss-cheese"
-            state_dir.mkdir()
-            state_file = state_dir / "state.json"
-            state_file.write_text("not valid json {{{")
-            state = load_state(Path(tmpdir))
-            assert state is None
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(".PHONY: test\ntest:\n\t@echo 'Error' && exit 1\n")
+            passed, output = run_gate(Path(tmpdir), "test")
+            assert passed is False
+            assert "Error" in output
 
-    def test_load_state_valid(self):
-        """load_state loads valid state file."""
-        import json
-
+    def test_gate_timeout(self):
+        """Returns (False, message) on timeout."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            state_dir = Path(tmpdir) / ".swiss-cheese"
-            state_dir.mkdir()
-            state_file = state_dir / "state.json"
-            state_file.write_text(json.dumps({
-                "version": 1,
-                "loop_active": True,
-                "loop_paused": False,
-                "current_layer": 3,
-                "layer_results": {"1": "pass", "2": "pass"},
-                "last_updated": "2024-01-01T00:00:00Z",
-            }))
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(".PHONY: slow\nslow:\n\tsleep 10\n")
+            passed, output = run_gate(Path(tmpdir), "slow", timeout=1)
+            assert passed is False
+            assert "timed out" in output
 
-            state = load_state(Path(tmpdir))
-            assert state is not None
-            assert state.loop_active is True
-            assert state.current_layer == 3
-
-    def test_save_state_creates_directory(self):
-        """save_state creates .swiss-cheese directory if needed."""
+    def test_output_truncated(self):
+        """Output is truncated to last 500 chars."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            project_dir = Path(tmpdir)
-            state = SessionState(loop_active=True, current_layer=1)
-
-            result = save_state(project_dir, state)
-            assert result is True
-            assert (project_dir / ".swiss-cheese" / "state.json").exists()
-
-    def test_save_state_updates_timestamp(self):
-        """save_state updates last_updated timestamp."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_dir = Path(tmpdir)
-            state = SessionState(loop_active=True)
-            assert state.last_updated == ""
-
-            save_state(project_dir, state)
-            assert state.last_updated != ""
-            assert "T" in state.last_updated  # ISO format
-
-    def test_save_load_roundtrip(self):
-        """save_state then load_state preserves data."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_dir = Path(tmpdir)
-            original = SessionState(
-                loop_active=True,
-                loop_paused=True,
-                current_layer=7,
-                layer_results={1: "pass", 2: "pass", 3: "skip"},
+            makefile = Path(tmpdir) / "Makefile"
+            # Generate long output
+            makefile.write_text(
+                ".PHONY: verbose\nverbose:\n\t@python3 -c \"print('x' * 1000)\"\n"
             )
-
-            save_state(project_dir, original)
-            loaded = load_state(project_dir)
-
-            assert loaded is not None
-            assert loaded.loop_active == original.loop_active
-            assert loaded.loop_paused == original.loop_paused
-            assert loaded.current_layer == original.current_layer
-            assert loaded.layer_results == original.layer_results
+            passed, output = run_gate(Path(tmpdir), "verbose")
+            assert passed is True
+            assert len(output) <= 500
 
 
-class TestFormatLoopStatus:
-    """Test format_loop_status function."""
+class TestDetectCurrentLayer:
+    """Test detect_current_layer function."""
 
-    def test_no_loop_returns_empty(self):
-        """No active/paused loop returns empty string."""
-        state = SessionState(loop_active=False, loop_paused=False)
-        result = format_loop_status(state)
-        assert result == ""
+    def test_no_makefile_returns_1(self):
+        """Returns layer 1 when no Makefile."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            layer = detect_current_layer(Path(tmpdir))
+            assert layer == 1
 
-    def test_loop_active(self):
-        """Active loop shows status."""
-        state = SessionState(loop_active=True, current_layer=3)
-        result = format_loop_status(state)
-        assert "LOOP ACTIVE" in result
-        assert "Layer 3" in result or "TDD Tests" in result
+    def test_all_pass_returns_4(self):
+        """Returns layer 4 when all gates pass."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            targets = "\n".join(
+                f".PHONY: {target}\n{target}:\n\t@echo ok"
+                for _, target in LAYERS.values()
+            )
+            makefile.write_text(targets)
+            layer = detect_current_layer(Path(tmpdir))
+            assert layer == 4
 
-    def test_loop_paused(self):
-        """Paused loop shows resume instructions."""
-        state = SessionState(
-            loop_active=False,
-            loop_paused=True,
-            current_layer=5,
+    def test_first_failure_detected(self):
+        """Returns first failing layer."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            # Layer 1 passes, Layer 2 fails
+            makefile.write_text(
+                ".PHONY: validate-requirements validate-tdd\n"
+                "validate-requirements:\n\t@echo ok\n"
+                "validate-tdd:\n\t@exit 1\n"
+            )
+            layer = detect_current_layer(Path(tmpdir))
+            assert layer == 2
+
+
+class TestCheckCurrentGate:
+    """Test check_current_gate function."""
+
+    def test_unknown_layer(self):
+        """Returns NOT_RUN for unknown layer."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = check_current_gate(Path(tmpdir), 99)
+            assert result.status == GateStatus.NOT_RUN
+            assert result.name == "unknown"
+
+    def test_no_makefile(self):
+        """Returns NOT_RUN when no Makefile."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = check_current_gate(Path(tmpdir), 1)
+            assert result.status == GateStatus.NOT_RUN
+            assert result.message == "No Makefile"
+
+    def test_no_target(self):
+        """Returns NOT_RUN when target missing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(".PHONY: other\nother:\n\t@echo ok\n")
+            result = check_current_gate(Path(tmpdir), 1)
+            assert result.status == GateStatus.NOT_RUN
+            assert "No target" in result.message
+
+    def test_gate_passes(self):
+        """Returns PASS when gate succeeds."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(
+                ".PHONY: validate-requirements\n"
+                "validate-requirements:\n\t@echo ok\n"
+            )
+            result = check_current_gate(Path(tmpdir), 1)
+            assert result.status == GateStatus.PASS
+            assert result.name == "requirements"
+            assert result.message is None
+
+    def test_gate_fails(self):
+        """Returns FAIL with output when gate fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(
+                ".PHONY: validate-requirements\n"
+                "validate-requirements:\n\t@echo 'ERROR: missing file' && exit 1\n"
+            )
+            result = check_current_gate(Path(tmpdir), 1)
+            assert result.status == GateStatus.FAIL
+            assert result.name == "requirements"
+            assert "missing file" in result.message
+
+
+class TestFormatStatusMessage:
+    """Test format_status_message function."""
+
+    def test_format_pass(self):
+        """Format passing gate status."""
+        result = GateResult(layer=1, name="requirements", status=GateStatus.PASS)
+        message = format_status_message(result, 1)
+        assert "Swiss Cheese Gate Status" in message
+        assert "1 - requirements" in message
+        assert "PASS" in message
+
+    def test_format_fail_includes_output(self):
+        """Format failing gate includes output."""
+        result = GateResult(
+            layer=1,
+            name="requirements",
+            status=GateStatus.FAIL,
+            message="ERROR: design.md not found",
         )
-        result = format_loop_status(state)
-        assert "LOOP PAUSED" in result
-        assert "/swiss-cheese:loop" in result
+        message = format_status_message(result, 1)
+        assert "FAIL" in message
+        assert "design.md not found" in message
+        assert "validate-requirements" in message
 
-    def test_layer_results_displayed(self):
-        """Layer results are displayed with icons."""
-        state = SessionState(
-            loop_active=True,
-            current_layer=4,
-            layer_results={1: "pass", 2: "pass", 3: "fail"},
+    def test_format_not_run_includes_note(self):
+        """Format NOT_RUN includes note."""
+        result = GateResult(
+            layer=1,
+            name="requirements",
+            status=GateStatus.NOT_RUN,
+            message="No Makefile",
         )
-        result = format_loop_status(state)
-        assert "pass" in result
-        assert "fail" in result
+        message = format_status_message(result, 1)
+        assert "NOT_RUN" in message
+        assert "No Makefile" in message
 
-    def test_layer_names_displayed(self):
-        """Layer names are displayed for known layers."""
-        state = SessionState(
-            loop_active=True,
-            current_layer=6,
-            layer_results={5: "pass"},
-        )
-        result = format_loop_status(state)
-        assert "Static Analysis" in result or "Formal Verification" in result
+
+class TestMain:
+    """Test main function (hook entry point)."""
+
+    def test_main_no_makefile_continues(self):
+        """Continues silently when no Makefile."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
+                with patch("sys.stdin", StringIO("{}")):
+                    with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                        main()
+                        output = json.loads(mock_stdout.getvalue())
+                        assert output["continue"] is True
+                        assert "systemMessage" not in output
+
+    def test_main_no_validate_targets_continues(self):
+        """Continues silently when no validate-* targets."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(".PHONY: test\ntest:\n\t@echo ok\n")
+            with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
+                with patch("sys.stdin", StringIO("{}")):
+                    with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                        main()
+                        output = json.loads(mock_stdout.getvalue())
+                        assert output["continue"] is True
+                        assert "systemMessage" not in output
+
+    def test_main_gate_pass_continues_silently(self):
+        """Continues silently when gate passes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(
+                ".PHONY: validate-requirements\n"
+                "validate-requirements:\n\t@echo ok\n"
+            )
+            with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
+                with patch("sys.stdin", StringIO("{}")):
+                    with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                        main()
+                        output = json.loads(mock_stdout.getvalue())
+                        assert output["continue"] is True
+                        # No system message on pass
+                        assert "systemMessage" not in output
+
+    def test_main_gate_fail_shows_message(self):
+        """Shows system message when gate fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            makefile = Path(tmpdir) / "Makefile"
+            makefile.write_text(
+                ".PHONY: validate-requirements\n"
+                "validate-requirements:\n\t@echo 'ERROR: missing design.md' && exit 1\n"
+            )
+            with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
+                with patch("sys.stdin", StringIO("{}")):
+                    with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                        main()
+                        output = json.loads(mock_stdout.getvalue())
+                        assert output["continue"] is True
+                        assert "systemMessage" in output
+                        assert "FAIL" in output["systemMessage"]
+                        assert "missing design.md" in output["systemMessage"]
+
+    def test_main_handles_empty_stdin(self):
+        """Handles empty/invalid stdin gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
+                with patch("sys.stdin", StringIO("")):
+                    with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                        main()  # Should not raise
+                        output = json.loads(mock_stdout.getvalue())
+                        assert output["continue"] is True
