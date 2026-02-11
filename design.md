@@ -75,6 +75,14 @@ Release Package
 - [ ] **FR-006.3**: Stop hook blocks exit during active loop
 - [ ] **FR-006.4**: `/swiss-cheese:cancel` terminates active loop
 
+### FR-007: Validation Reports
+- [x] **FR-007.1**: Gate check hook reads `.swiss-cheese/reports/validation_report.json`
+- [x] **FR-007.2**: Gate check compares report git hash vs current HEAD for staleness
+- [x] **FR-007.3**: Gate check completes in <100ms (read-only, no subprocess)
+- [x] **FR-007.4**: `/swiss-cheese:generate-reports` runs all layer gates
+- [x] **FR-007.5**: Report includes layer status, coverage, tests, traceability metrics
+- [x] **FR-007.6**: Report embeds git hash for staleness detection
+
 ## Test Coverage Requirements
 
 | Component | Target Coverage |
@@ -102,3 +110,9 @@ Release Package
 | FR-001.1 | test_hooks.py | TestLoadSaveState.test_load_state_* |
 | FR-001.2 | test_hooks.py | TestFormatLoopStatus.* |
 | FR-001.3 | test_hooks.py | TestLoadSaveState.test_save_state_* |
+| FR-007.1 | test_hooks.py | TestReadReport.* |
+| FR-007.2 | test_hooks.py | TestCheckStaleness.* |
+| FR-007.3 | test_hooks.py | TestMainReadOnly.* |
+| FR-007.4 | test_generate_reports.py | TestRunLayerGates.* |
+| FR-007.5 | test_generate_reports.py | TestCollectMetrics.* |
+| FR-007.6 | test_generate_reports.py | TestGenerateReport.test_git_hash_embedded |

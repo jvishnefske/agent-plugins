@@ -1,4 +1,4 @@
-"""Unit tests for swiss-cheese gate_check hook."""
+"""Unit tests for swiss-cheese gate_check hook (read-only version)."""
 import json
 import sys
 import tempfile
@@ -14,13 +14,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
 from gate_check import (
     GateStatus,
     GateResult,
+    StalenessResult,
+    ValidationReport,
     LAYERS,
     get_project_dir,
-    makefile_exists,
-    has_target,
-    run_gate,
-    detect_current_layer,
-    check_current_gate,
+    get_current_git_hash,
+    read_report,
+    check_staleness,
+    get_first_failing_layer,
+    format_staleness_warning,
     format_status_message,
     main,
 )
@@ -59,6 +61,23 @@ class TestGateResult:
         """GateResult message defaults to None."""
         result = GateResult(layer=1, name="requirements", status=GateStatus.PASS)
         assert result.message is None
+
+
+class TestStalenessResult:
+    """Test StalenessResult dataclass."""
+
+    def test_staleness_result_immutable(self):
+        """StalenessResult is frozen (immutable)."""
+        result = StalenessResult(is_stale=True, report_hash="abc1234", current_hash="def5678")
+        with pytest.raises(AttributeError):
+            result.is_stale = False
+
+    def test_staleness_result_fields(self):
+        """StalenessResult stores all fields."""
+        result = StalenessResult(is_stale=True, report_hash="abc1234", current_hash="def5678")
+        assert result.is_stale is True
+        assert result.report_hash == "abc1234"
+        assert result.current_hash == "def5678"
 
 
 class TestLayers:
@@ -103,172 +122,207 @@ class TestGetProjectDir:
                 assert result == Path("/some/cwd")
 
 
-class TestMakefileExists:
-    """Test makefile_exists function."""
+class TestGetCurrentGitHash:
+    """Test get_current_git_hash function."""
 
-    def test_makefile_exists(self):
-        """Returns True when Makefile exists."""
+    def test_returns_hash_in_git_repo(self):
+        """Returns git hash in a git repository."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: test\ntest:\n\techo ok\n")
-            assert makefile_exists(Path(tmpdir)) is True
+            import subprocess
+            subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, capture_output=True)
+            Path(tmpdir, "test.txt").write_text("test")
+            subprocess.run(["git", "add", "test.txt"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "test"], cwd=tmpdir, capture_output=True)
 
-    def test_makefile_missing(self):
-        """Returns False when Makefile missing."""
+            result = get_current_git_hash(Path(tmpdir))
+            assert len(result) == 40  # Full SHA-1 hash
+
+    def test_returns_empty_string_non_git_dir(self):
+        """Returns empty string for non-git directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            assert makefile_exists(Path(tmpdir)) is False
+            result = get_current_git_hash(Path(tmpdir))
+            assert result == ""
 
 
-class TestHasTarget:
-    """Test has_target function."""
+class TestReadReport:
+    """Test read_report function."""
 
-    def test_target_exists(self):
-        """Returns True for existing target."""
+    def test_read_valid_report(self):
+        """Reads valid report JSON."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: test\ntest:\n\t@echo ok\n")
-            exists, err = has_target(Path(tmpdir), "test")
-            assert exists is True
-            assert err == ""
+            report_dir = Path(tmpdir) / ".swiss-cheese" / "reports"
+            report_dir.mkdir(parents=True)
+            report_path = report_dir / "validation_report.json"
+            report_path.write_text(json.dumps({
+                "meta": {
+                    "git_hash": "abc1234567890",
+                    "git_hash_short": "abc1234",
+                    "timestamp": "2026-02-03T12:00:00Z",
+                },
+                "layers": {
+                    "requirements": {"status": "PASS", "checked_at": "2026-02-03T12:00:00Z"},
+                    "tdd": {"status": "FAIL", "message": "Tests don't compile"},
+                },
+            }))
 
-    def test_target_missing(self):
-        """Returns False for missing target."""
+            result = read_report(report_path)
+            assert result is not None
+            assert result.git_hash == "abc1234567890"
+            assert result.git_hash_short == "abc1234"
+            assert result.layers["requirements"]["status"] == "PASS"
+            assert result.layers["tdd"]["status"] == "FAIL"
+
+    def test_read_nonexistent_report(self):
+        """Returns None for nonexistent report."""
+        result = read_report(Path("/nonexistent/path/report.json"))
+        assert result is None
+
+    def test_read_invalid_json(self):
+        """Returns None for invalid JSON."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: test\ntest:\n\t@echo ok\n")
-            exists, _ = has_target(Path(tmpdir), "nonexistent")
-            assert exists is False
+            report_path = Path(tmpdir) / "report.json"
+            report_path.write_text("not valid json {{{")
 
+            result = read_report(report_path)
+            assert result is None
 
-class TestRunGate:
-    """Test run_gate function."""
-
-    def test_gate_passes(self):
-        """Returns (True, output) when gate passes."""
+    def test_read_report_with_optional_fields(self):
+        """Reads report with optional coverage/tests/traceability."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: test\ntest:\n\t@echo 'Gate passed'\n")
-            passed, output = run_gate(Path(tmpdir), "test")
-            assert passed is True
-            assert "Gate passed" in output
+            report_path = Path(tmpdir) / "report.json"
+            report_path.write_text(json.dumps({
+                "meta": {
+                    "git_hash": "abc1234",
+                    "git_hash_short": "abc1234",
+                    "timestamp": "2026-02-03T12:00:00Z",
+                },
+                "layers": {},
+                "coverage": {"line_percent": 75.5},
+                "tests": {"total": 10, "passed": 10},
+                "traceability": {"requirements_count": 5},
+            }))
 
-    def test_gate_fails(self):
-        """Returns (False, output) when gate fails."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: test\ntest:\n\t@echo 'Error' && exit 1\n")
-            passed, output = run_gate(Path(tmpdir), "test")
-            assert passed is False
-            assert "Error" in output
-
-    def test_gate_timeout(self):
-        """Returns (False, message) on timeout."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: slow\nslow:\n\tsleep 10\n")
-            passed, output = run_gate(Path(tmpdir), "slow", timeout=1)
-            assert passed is False
-            assert "timed out" in output
-
-    def test_output_truncated(self):
-        """Output is truncated to last 500 chars."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            # Generate long output
-            makefile.write_text(
-                ".PHONY: verbose\nverbose:\n\t@python3 -c \"print('x' * 1000)\"\n"
-            )
-            passed, output = run_gate(Path(tmpdir), "verbose")
-            assert passed is True
-            assert len(output) <= 500
+            result = read_report(report_path)
+            assert result is not None
+            assert result.coverage == {"line_percent": 75.5}
+            assert result.tests == {"total": 10, "passed": 10}
+            assert result.traceability == {"requirements_count": 5}
 
 
-class TestDetectCurrentLayer:
-    """Test detect_current_layer function."""
+class TestCheckStaleness:
+    """Test check_staleness function."""
 
-    def test_no_makefile_returns_1(self):
-        """Returns layer 1 when no Makefile."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            layer = detect_current_layer(Path(tmpdir))
-            assert layer == 1
+    def test_same_hash_not_stale(self):
+        """Same hash = not stale."""
+        result = check_staleness("abc1234567890", "abc1234567890")
+        assert result.is_stale is False
+        assert result.report_hash == "abc1234"
+        assert result.current_hash == "abc1234"
 
-    def test_all_pass_returns_4(self):
-        """Returns layer 4 when all gates pass."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            targets = "\n".join(
-                f".PHONY: {target}\n{target}:\n\t@echo ok"
-                for _, target in LAYERS.values()
-            )
-            makefile.write_text(targets)
-            layer = detect_current_layer(Path(tmpdir))
-            assert layer == 4
+    def test_different_hash_is_stale(self):
+        """Different hash = stale."""
+        result = check_staleness("abc1234567890", "def5678901234")
+        assert result.is_stale is True
+        assert result.report_hash == "abc1234"
+        assert result.current_hash == "def5678"
+
+    def test_empty_report_hash_not_stale(self):
+        """Empty report hash = not stale (no report)."""
+        result = check_staleness("", "abc1234")
+        assert result.is_stale is False
+
+    def test_empty_current_hash_not_stale(self):
+        """Empty current hash = not stale (not a git repo)."""
+        result = check_staleness("abc1234", "")
+        assert result.is_stale is False
+
+    def test_uses_short_hash_for_comparison(self):
+        """Uses first 7 chars for comparison."""
+        # Same first 7 chars but different full hash
+        result = check_staleness("abc1234XXXXXXX", "abc1234YYYYYYY")
+        assert result.is_stale is False
+
+
+class TestGetFirstFailingLayer:
+    """Test get_first_failing_layer function."""
+
+    def test_all_pass_returns_none(self):
+        """Returns None when all layers pass."""
+        report = ValidationReport(
+            git_hash="abc",
+            git_hash_short="abc",
+            timestamp="",
+            layers={
+                "requirements": {"status": "PASS"},
+                "tdd": {"status": "PASS"},
+                "implementation": {"status": "PASS"},
+                "verify": {"status": "PASS"},
+            },
+        )
+        assert get_first_failing_layer(report) is None
 
     def test_first_failure_detected(self):
         """Returns first failing layer."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            # Layer 1 passes, Layer 2 fails
-            makefile.write_text(
-                ".PHONY: validate-requirements validate-tdd\n"
-                "validate-requirements:\n\t@echo ok\n"
-                "validate-tdd:\n\t@exit 1\n"
-            )
-            layer = detect_current_layer(Path(tmpdir))
-            assert layer == 2
+        report = ValidationReport(
+            git_hash="abc",
+            git_hash_short="abc",
+            timestamp="",
+            layers={
+                "requirements": {"status": "PASS"},
+                "tdd": {"status": "FAIL", "message": "Tests don't compile"},
+                "implementation": {"status": "NOT_RUN"},
+                "verify": {"status": "NOT_RUN"},
+            },
+        )
+        result = get_first_failing_layer(report)
+        assert result is not None
+        assert result[0] == 2  # Layer number
+        assert result[1] == "tdd"  # Layer name
+        assert result[2] == "Tests don't compile"
+
+    def test_not_run_not_treated_as_failure(self):
+        """NOT_RUN is not treated as failure."""
+        report = ValidationReport(
+            git_hash="abc",
+            git_hash_short="abc",
+            timestamp="",
+            layers={
+                "requirements": {"status": "PASS"},
+                "tdd": {"status": "NOT_RUN"},
+                "implementation": {"status": "NOT_RUN"},
+                "verify": {"status": "NOT_RUN"},
+            },
+        )
+        assert get_first_failing_layer(report) is None
+
+    def test_uses_output_if_no_message(self):
+        """Uses output field if message is empty."""
+        report = ValidationReport(
+            git_hash="abc",
+            git_hash_short="abc",
+            timestamp="",
+            layers={
+                "requirements": {"status": "FAIL", "output": "error output"},
+            },
+        )
+        result = get_first_failing_layer(report)
+        assert result is not None
+        assert result[2] == "error output"
 
 
-class TestCheckCurrentGate:
-    """Test check_current_gate function."""
+class TestFormatStalenessWarning:
+    """Test format_staleness_warning function."""
 
-    def test_unknown_layer(self):
-        """Returns NOT_RUN for unknown layer."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = check_current_gate(Path(tmpdir), 99)
-            assert result.status == GateStatus.NOT_RUN
-            assert result.name == "unknown"
-
-    def test_no_makefile(self):
-        """Returns NOT_RUN when no Makefile."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = check_current_gate(Path(tmpdir), 1)
-            assert result.status == GateStatus.NOT_RUN
-            assert result.message == "No Makefile"
-
-    def test_no_target(self):
-        """Returns NOT_RUN when target missing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: other\nother:\n\t@echo ok\n")
-            result = check_current_gate(Path(tmpdir), 1)
-            assert result.status == GateStatus.NOT_RUN
-            assert "No target" in result.message
-
-    def test_gate_passes(self):
-        """Returns PASS when gate succeeds."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(
-                ".PHONY: validate-requirements\n"
-                "validate-requirements:\n\t@echo ok\n"
-            )
-            result = check_current_gate(Path(tmpdir), 1)
-            assert result.status == GateStatus.PASS
-            assert result.name == "requirements"
-            assert result.message is None
-
-    def test_gate_fails(self):
-        """Returns FAIL with output when gate fails."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(
-                ".PHONY: validate-requirements\n"
-                "validate-requirements:\n\t@echo 'ERROR: missing file' && exit 1\n"
-            )
-            result = check_current_gate(Path(tmpdir), 1)
-            assert result.status == GateStatus.FAIL
-            assert result.name == "requirements"
-            assert "missing file" in result.message
+    def test_format_warning(self):
+        """Formats staleness warning with hashes."""
+        staleness = StalenessResult(is_stale=True, report_hash="abc1234", current_hash="def5678")
+        result = format_staleness_warning(staleness)
+        assert "abc1234" in result
+        assert "def5678" in result
+        assert "stale" in result.lower()
+        assert "/swiss-cheese:generate-reports" in result
 
 
 class TestFormatStatusMessage:
@@ -307,12 +361,27 @@ class TestFormatStatusMessage:
         assert "NOT_RUN" in message
         assert "No Makefile" in message
 
+    def test_format_with_staleness_warning(self):
+        """Format includes staleness warning when stale."""
+        result = GateResult(layer=1, name="requirements", status=GateStatus.PASS)
+        staleness = StalenessResult(is_stale=True, report_hash="abc1234", current_hash="def5678")
+        message = format_status_message(result, 1, staleness)
+        assert "stale" in message.lower()
+        assert "abc1234" in message
 
-class TestMain:
-    """Test main function (hook entry point)."""
+    def test_format_no_staleness_when_fresh(self):
+        """Format omits staleness warning when fresh."""
+        result = GateResult(layer=1, name="requirements", status=GateStatus.PASS)
+        staleness = StalenessResult(is_stale=False, report_hash="abc1234", current_hash="abc1234")
+        message = format_status_message(result, 1, staleness)
+        assert "stale" not in message.lower()
 
-    def test_main_no_makefile_continues(self):
-        """Continues silently when no Makefile."""
+
+class TestMainReadOnly:
+    """Test main function (hook entry point) - read-only behavior."""
+
+    def test_main_no_report_continues_silently(self):
+        """Continues silently when no report file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
                 with patch("sys.stdin", StringIO("{}")):
@@ -322,11 +391,42 @@ class TestMain:
                         assert output["continue"] is True
                         assert "systemMessage" not in output
 
-    def test_main_no_validate_targets_continues(self):
-        """Continues silently when no validate-* targets."""
+    def test_main_all_pass_continues_silently(self):
+        """Continues silently when all gates pass and not stale."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(".PHONY: test\ntest:\n\t@echo ok\n")
+            # Create report directory
+            report_dir = Path(tmpdir) / ".swiss-cheese" / "reports"
+            report_dir.mkdir(parents=True)
+            report_path = report_dir / "validation_report.json"
+
+            # Create git repo with known hash
+            import subprocess
+            subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, capture_output=True)
+            Path(tmpdir, "test.txt").write_text("test")
+            subprocess.run(["git", "add", "test.txt"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "test"], cwd=tmpdir, capture_output=True)
+
+            # Get current hash
+            result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmpdir, capture_output=True, text=True)
+            current_hash = result.stdout.strip()
+
+            # Write report with same hash
+            report_path.write_text(json.dumps({
+                "meta": {
+                    "git_hash": current_hash,
+                    "git_hash_short": current_hash[:7],
+                    "timestamp": "2026-02-03T12:00:00Z",
+                },
+                "layers": {
+                    "requirements": {"status": "PASS"},
+                    "tdd": {"status": "PASS"},
+                    "implementation": {"status": "PASS"},
+                    "verify": {"status": "PASS"},
+                },
+            }))
+
             with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
                 with patch("sys.stdin", StringIO("{}")):
                     with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
@@ -335,31 +435,65 @@ class TestMain:
                         assert output["continue"] is True
                         assert "systemMessage" not in output
 
-    def test_main_gate_pass_continues_silently(self):
-        """Continues silently when gate passes."""
+    def test_main_stale_report_shows_warning(self):
+        """Shows staleness warning when report hash differs from HEAD."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(
-                ".PHONY: validate-requirements\n"
-                "validate-requirements:\n\t@echo ok\n"
-            )
+            # Create report directory
+            report_dir = Path(tmpdir) / ".swiss-cheese" / "reports"
+            report_dir.mkdir(parents=True)
+            report_path = report_dir / "validation_report.json"
+
+            # Create git repo
+            import subprocess
+            subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, capture_output=True)
+            Path(tmpdir, "test.txt").write_text("test")
+            subprocess.run(["git", "add", "test.txt"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "test"], cwd=tmpdir, capture_output=True)
+
+            # Write report with different hash
+            report_path.write_text(json.dumps({
+                "meta": {
+                    "git_hash": "0000000000000000000000000000000000000000",
+                    "git_hash_short": "0000000",
+                    "timestamp": "2026-02-03T12:00:00Z",
+                },
+                "layers": {
+                    "requirements": {"status": "PASS"},
+                    "tdd": {"status": "PASS"},
+                    "implementation": {"status": "PASS"},
+                    "verify": {"status": "PASS"},
+                },
+            }))
+
             with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
                 with patch("sys.stdin", StringIO("{}")):
                     with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                         main()
                         output = json.loads(mock_stdout.getvalue())
                         assert output["continue"] is True
-                        # No system message on pass
-                        assert "systemMessage" not in output
+                        assert "systemMessage" in output
+                        assert "stale" in output["systemMessage"].lower()
 
     def test_main_gate_fail_shows_message(self):
         """Shows system message when gate fails."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            makefile = Path(tmpdir) / "Makefile"
-            makefile.write_text(
-                ".PHONY: validate-requirements\n"
-                "validate-requirements:\n\t@echo 'ERROR: missing design.md' && exit 1\n"
-            )
+            # Create report with failure
+            report_dir = Path(tmpdir) / ".swiss-cheese" / "reports"
+            report_dir.mkdir(parents=True)
+            report_path = report_dir / "validation_report.json"
+            report_path.write_text(json.dumps({
+                "meta": {
+                    "git_hash": "abc1234567890",
+                    "git_hash_short": "abc1234",
+                    "timestamp": "2026-02-03T12:00:00Z",
+                },
+                "layers": {
+                    "requirements": {"status": "FAIL", "message": "ERROR: missing design.toml"},
+                },
+            }))
+
             with patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": tmpdir}):
                 with patch("sys.stdin", StringIO("{}")):
                     with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
@@ -368,7 +502,7 @@ class TestMain:
                         assert output["continue"] is True
                         assert "systemMessage" in output
                         assert "FAIL" in output["systemMessage"]
-                        assert "missing design.md" in output["systemMessage"]
+                        assert "design.toml" in output["systemMessage"]
 
     def test_main_handles_empty_stdin(self):
         """Handles empty/invalid stdin gracefully."""
